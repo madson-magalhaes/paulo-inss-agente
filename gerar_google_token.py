@@ -13,10 +13,17 @@ load_dotenv()
 
 try:
     from google_auth_oauthlib.flow import InstalledAppFlow
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+    from urllib.parse import urlparse, parse_qs
+    import threading
 except ImportError:
     print("❌ Bibliotecas necessárias não encontradas")
     print("Instale com: pip install google-auth-oauthlib google-auth-httplib2")
     exit(1)
+
+# Variável global para armazenar o código
+authorization_code = None
+server_running = True
 
 # Configurações
 CLIENT_ID = os.getenv('GOOGLE_OAUTH_CLIENT_ID', '')
@@ -74,6 +81,62 @@ def update_env_with_token(creds):
         return False
 
 
+class OAuthCallbackHandler(BaseHTTPRequestHandler):
+    """Handler HTTP para receber o callback OAuth"""
+
+    def do_GET(self):
+        global authorization_code, server_running
+
+        # Parse da URL
+        parsed_url = urlparse(self.path)
+        query_params = parse_qs(parsed_url.query)
+
+        # Extrai o código
+        if 'code' in query_params:
+            authorization_code = query_params['code'][0]
+
+            # Resposta sucesso
+            self.send_response(200)
+            self.send_header('Content-type', 'text/html; charset=utf-8')
+            self.end_headers()
+
+            html = """
+            <html>
+            <head><title>Autorização bem-sucedida</title></head>
+            <body style="font-family: Arial; text-align: center; margin-top: 50px;">
+                <h1>✅ Autorização bem-sucedida!</h1>
+                <p>Você pode fechar este navegador e voltar ao terminal.</p>
+                <p style="color: green; font-size: 20px;">O token está sendo processado...</p>
+            </body>
+            </html>
+            """
+            self.wfile.write(html.encode('utf-8'))
+        else:
+            # Resposta erro
+            self.send_response(400)
+            self.send_header('Content-type', 'text/html; charset=utf-8')
+            self.end_headers()
+
+            html = """
+            <html>
+            <head><title>Erro na autorização</title></head>
+            <body style="font-family: Arial; text-align: center; margin-top: 50px;">
+                <h1>❌ Erro na autorização</h1>
+                <p>Nenhum código de autorização foi recebido.</p>
+                <p>Tente novamente e certifique-se de clicar em "Continuar".</p>
+            </body>
+            </html>
+            """
+            self.wfile.write(html.encode('utf-8'))
+
+        # Para o servidor
+        server_running = False
+
+    def log_message(self, format, *args):
+        # Suprime logs padrão do servidor
+        pass
+
+
 def gerar_token():
     """Gera novo token OAuth com refresh_token"""
 
@@ -92,16 +155,25 @@ def gerar_token():
     print(f"   • Token será salvo em: {TOKEN_FILE}\n")
 
     try:
+        global authorization_code, server_running
+
         # Cria o flow OAuth com redirect_uri local
         flow = InstalledAppFlow.from_client_secrets_file(
             '.credentials/oauth_credentials.json',
             SCOPES,
-            redirect_uri='http://localhost:8080/'  # Especifica o redirect_uri
+            redirect_uri='http://localhost:8080/'
         )
 
         print("\n" + "=" * 80)
-        print("🔗 ACESSO GOOGLE OAUTH - COPY & PASTE")
+        print("🔗 ACESSO GOOGLE OAUTH - SERVIDOR LOCAL")
         print("=" * 80 + "\n")
+
+        # Inicia servidor HTTP na porta 8080
+        print("🚀 Iniciando servidor local na porta 8080...")
+        server = HTTPServer(('localhost', 8080), OAuthCallbackHandler)
+        server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+        server_thread.start()
+        print("✅ Servidor rodando em http://localhost:8080\n")
 
         # Gera a URL de autenticação
         auth_uri, _ = flow.authorization_url(prompt='consent')
@@ -110,31 +182,30 @@ def gerar_token():
         print(f"🔗 {auth_uri}\n")
 
         print("=" * 80)
-        print("\n✅ Após autorizar, você receberá um código na URL")
-        print("📝 Cole o código abaixo e pressione ENTER")
-        print("   (O código vem depois de 'code=' na URL)\n")
+        print("\n⏳ Aguardando autorização...")
+        print("   (O navegador irá redirecionar automaticamente)\n")
 
-        # Aguarda o código
-        auth_code = input("🔑 Digite o código de autorização: ").strip()
+        # Aguarda o código chegar via callback
+        while server_running and not authorization_code:
+            import time
+            time.sleep(0.1)
 
-        if not auth_code:
-            print("❌ Código não fornecido")
+        # Para o servidor
+        server.shutdown()
+
+        if not authorization_code:
+            print("❌ Nenhuma autorização recebida")
             return False
+
+        print(f"✅ Código de autorização recebido!")
 
         # Troca o código pelo token
         try:
-            flow.fetch_token(code=auth_code)
+            flow.fetch_token(code=authorization_code)
             creds = flow.credentials
-            print("\n✅ Autenticação bem-sucedida!")
+            print("✅ Autenticação bem-sucedida!")
         except Exception as e:
-            print(f"\n❌ Erro ao trocar código por token: {e}")
-            print("\n💡 Solução:")
-            print("   1. Vá em https://console.cloud.google.com/apis/credentials")
-            print("   2. Clique em 'OAuth 2.0 Client ID' (gdrive-inss)")
-            print("   3. Em 'URIs autorizados de redirecionamento', adicione:")
-            print("      - http://localhost:8080/")
-            print("      - http://localhost:8080")
-            print("   4. Tente novamente")
+            print(f"❌ Erro ao trocar código por token: {e}")
             return False
 
         # Salva o token com refresh_token
