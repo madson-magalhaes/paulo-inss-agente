@@ -87,13 +87,18 @@ class OAuthCallbackHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         global authorization_code, server_running
 
+        print(f"\nDEBUG - Requisição recebida: {self.path}")
+
         # Parse da URL
         parsed_url = urlparse(self.path)
         query_params = parse_qs(parsed_url.query)
 
+        print(f"DEBUG - Query params: {query_params}")
+
         # Extrai o código
         if 'code' in query_params:
             authorization_code = query_params['code'][0]
+            print(f"DEBUG - Código de autorização capturado: {authorization_code[:50]}...")
 
             # Resposta sucesso
             self.send_response(200)
@@ -111,6 +116,7 @@ class OAuthCallbackHandler(BaseHTTPRequestHandler):
             </html>
             """
             self.wfile.write(html.encode('utf-8'))
+            print("DEBUG - Página de sucesso enviada")
         else:
             # Resposta erro
             self.send_response(400)
@@ -123,18 +129,21 @@ class OAuthCallbackHandler(BaseHTTPRequestHandler):
             <body style="font-family: Arial; text-align: center; margin-top: 50px;">
                 <h1>❌ Erro na autorização</h1>
                 <p>Nenhum código de autorização foi recebido.</p>
+                <p style="color: red;">Parâmetros recebidos: """ + str(query_params) + """</p>
                 <p>Tente novamente e certifique-se de clicar em "Continuar".</p>
             </body>
             </html>
             """
             self.wfile.write(html.encode('utf-8'))
+            print(f"DEBUG - Erro: nenhum código recebido")
 
         # Para o servidor
         server_running = False
 
     def log_message(self, format, *args):
-        # Suprime logs padrão do servidor
-        pass
+        # Mostra logs importantes
+        if 'GET' in format:
+            print(f"DEBUG - HTTP: {format % args}")
 
 
 def gerar_token():
@@ -170,10 +179,16 @@ def gerar_token():
 
         # Inicia servidor HTTP na porta 8080
         print("🚀 Iniciando servidor local na porta 8080...")
-        server = HTTPServer(('localhost', 8080), OAuthCallbackHandler)
-        server_thread = threading.Thread(target=server.serve_forever, daemon=True)
-        server_thread.start()
-        print("✅ Servidor rodando em http://localhost:8080\n")
+        try:
+            server = HTTPServer(('127.0.0.1', 8080), OAuthCallbackHandler)
+            print("✅ Servidor criado com sucesso")
+            server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+            server_thread.start()
+            print("✅ Servidor rodando em http://localhost:8080")
+            print("✅ Aguardando callback do Google...\n")
+        except Exception as e:
+            print(f"❌ Erro ao iniciar servidor: {e}")
+            return False
 
         # Gera a URL de autenticação
         auth_uri, _ = flow.authorization_url(prompt='consent')
@@ -185,16 +200,27 @@ def gerar_token():
         print("\n⏳ Aguardando autorização...")
         print("   (O navegador irá redirecionar automaticamente)\n")
 
-        # Aguarda o código chegar via callback
-        while server_running and not authorization_code:
-            import time
-            time.sleep(0.1)
+        # Aguarda o código chegar via callback (máximo 5 minutos)
+        import time
+        timeout = 300  # 5 minutos
+        elapsed = 0
+        while elapsed < timeout:
+            if not server_running or authorization_code:
+                break
+            time.sleep(0.5)
+            elapsed += 0.5
+            if elapsed % 10 == 0:
+                print(f"DEBUG - Aguardando... ({int(elapsed)}s)")
 
         # Para o servidor
-        server.shutdown()
+        try:
+            server.shutdown()
+        except:
+            pass
 
         if not authorization_code:
-            print("❌ Nenhuma autorização recebida")
+            print("❌ Timeout: nenhuma autorização recebida em 5 minutos")
+            print("   Verifique se o navegador redirecionou para http://localhost:8080")
             return False
 
         print(f"✅ Código de autorização recebido!")
