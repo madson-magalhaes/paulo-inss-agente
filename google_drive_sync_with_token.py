@@ -31,14 +31,37 @@ SCOPES = ['https://www.googleapis.com/auth/drive']
 
 
 def obter_credenciais_do_env():
-    """Carrega credenciais do token no .env"""
+    """Carrega credenciais do arquivo .credentials/google_token.json ou do .env"""
 
+    token_file = '.credentials/google_token.json'
+
+    # Tenta carregar do arquivo first (tem todas as infos necessárias)
+    if os.path.exists(token_file):
+        try:
+            with open(token_file, 'r') as f:
+                token_data = json.load(f)
+                print(f"DEBUG - Carregando credenciais de {token_file}")
+
+                creds = Credentials(
+                    token=token_data.get('token'),
+                    refresh_token=token_data.get('refresh_token'),
+                    token_uri=token_data.get('token_uri'),
+                    client_id=token_data.get('client_id'),
+                    client_secret=token_data.get('client_secret'),
+                    scopes=token_data.get('scopes', SCOPES)
+                )
+                print("✅ Credenciais carregadas do arquivo .credentials/google_token.json")
+                return creds
+        except Exception as e:
+            print(f"⚠️ Aviso ao carregar arquivo: {e}")
+
+    # Fallback: usar variáveis do .env
     if not OAUTH_TOKEN:
         print("❌ Token OAuth não encontrado em .env")
         return None
 
     try:
-        # Criar credencial a partir do token armazenado
+        print("DEBUG - Usando credenciais do .env como fallback")
         creds = Credentials(
             token=OAUTH_TOKEN,
             refresh_token=None,
@@ -47,7 +70,6 @@ def obter_credenciais_do_env():
             client_secret=OAUTH_CLIENT_SECRET,
             scopes=SCOPES
         )
-
         print("✅ Credenciais carregadas do .env")
         return creds
     except Exception as e:
