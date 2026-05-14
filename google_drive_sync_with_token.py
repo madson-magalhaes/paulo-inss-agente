@@ -35,6 +35,10 @@ def obter_credenciais_do_env():
 
     token_file = '.credentials/google_token.json'
 
+    print(f"DEBUG - Procurando arquivo: {token_file}")
+    print(f"DEBUG - Arquivo existe? {os.path.exists(token_file)}")
+    print(f"DEBUG - CWD: {os.getcwd()}")
+
     # Tenta carregar do arquivo first (tem todas as infos necessárias)
     if os.path.exists(token_file):
         try:
@@ -61,6 +65,7 @@ def obter_credenciais_do_env():
         return None
 
     try:
+        print("DEBUG - Arquivo .credentials/google_token.json não encontrado!")
         print("DEBUG - Usando credenciais do .env como fallback")
         creds = Credentials(
             token=OAUTH_TOKEN,
