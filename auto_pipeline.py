@@ -24,6 +24,13 @@ def imprimir_separador():
     print("\n" + "=" * 80)
 
 
+def renovar_token_google():
+    """Verifica e renova token Google se necessário"""
+    print(f"\n🔄 Verificando token Google OAuth...")
+    resultado = subprocess.run([sys.executable, "google_token_refresh.py"])
+    return resultado.returncode == 0
+
+
 def executar_pipeline():
     """Executa o pipeline completo"""
     print(f"\n🚀 [{formatar_hora()}] Iniciando pipeline...")
@@ -62,6 +69,9 @@ def main():
     try:
         while True:
             contador += 1
+
+            # Renova token Google se necessário
+            renovar_token_google()
 
             # Executa pipeline
             sucesso = executar_pipeline()
