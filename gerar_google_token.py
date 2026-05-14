@@ -92,10 +92,11 @@ def gerar_token():
     print(f"   • Token será salvo em: {TOKEN_FILE}\n")
 
     try:
-        # Cria o flow OAuth
+        # Cria o flow OAuth com redirect_uri local
         flow = InstalledAppFlow.from_client_secrets_file(
             '.credentials/oauth_credentials.json',
-            SCOPES
+            SCOPES,
+            redirect_uri='http://localhost:8080/'  # Especifica o redirect_uri
         )
 
         print("\n" + "=" * 80)
@@ -109,8 +110,9 @@ def gerar_token():
         print(f"🔗 {auth_uri}\n")
 
         print("=" * 80)
-        print("\n✅ Após autorizar, você receberá um código")
-        print("📝 Cole o código abaixo e pressione ENTER\n")
+        print("\n✅ Após autorizar, você receberá um código na URL")
+        print("📝 Cole o código abaixo e pressione ENTER")
+        print("   (O código vem depois de 'code=' na URL)\n")
 
         # Aguarda o código
         auth_code = input("🔑 Digite o código de autorização: ").strip()
@@ -120,10 +122,20 @@ def gerar_token():
             return False
 
         # Troca o código pelo token
-        flow.fetch_token(code=auth_code)
-        creds = flow.credentials
-
-        print("\n✅ Autenticação bem-sucedida!")
+        try:
+            flow.fetch_token(code=auth_code)
+            creds = flow.credentials
+            print("\n✅ Autenticação bem-sucedida!")
+        except Exception as e:
+            print(f"\n❌ Erro ao trocar código por token: {e}")
+            print("\n💡 Solução:")
+            print("   1. Vá em https://console.cloud.google.com/apis/credentials")
+            print("   2. Clique em 'OAuth 2.0 Client ID' (gdrive-inss)")
+            print("   3. Em 'URIs autorizados de redirecionamento', adicione:")
+            print("      - http://localhost:8080/")
+            print("      - http://localhost:8080")
+            print("   4. Tente novamente")
+            return False
 
         # Salva o token com refresh_token
         Path('.credentials').mkdir(exist_ok=True)
