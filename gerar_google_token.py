@@ -1,0 +1,106 @@
+#!/usr/bin/env python3
+"""
+Gerador de Token Google OAuth com Refresh Token
+Use isso para gerar um token que possa renovar automaticamente
+"""
+
+import os
+import json
+from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()
+
+try:
+    from google.auth.transport.requests import Request
+    from google.oauth2.credentials import Credentials
+    from google_auth_oauthlib.flow import InstalledAppFlow
+except ImportError:
+    print("❌ Bibliotecas necessárias não encontradas")
+    print("Instale com: pip install google-auth-oauthlib google-auth-httplib2")
+    exit(1)
+
+# Configurações
+CLIENT_ID = os.getenv('GOOGLE_OAUTH_CLIENT_ID', '')
+CLIENT_SECRET = os.getenv('GOOGLE_OAUTH_CLIENT_SECRET', '')
+SCOPES = ['https://www.googleapis.com/auth/drive']
+TOKEN_FILE = '.credentials/google_token.json'
+
+
+def gerar_token():
+    """Gera novo token OAuth com refresh_token"""
+
+    if not CLIENT_ID or not CLIENT_SECRET:
+        print("❌ GOOGLE_OAUTH_CLIENT_ID ou GOOGLE_OAUTH_CLIENT_SECRET não configurados")
+        print("   Configure-os no .env primeiro")
+        return False
+
+    print("\n" + "=" * 80)
+    print("GERADOR DE TOKEN GOOGLE OAUTH COM REFRESH TOKEN")
+    print("=" * 80 + "\n")
+
+    print("📋 Configuração:")
+    print(f"   • Client ID: {CLIENT_ID[:30]}...")
+    print(f"   • Scopes: {', '.join(SCOPES)}")
+    print(f"   • Token será salvo em: {TOKEN_FILE}\n")
+
+    try:
+        # Cria o flow OAuth
+        flow = InstalledAppFlow.from_client_secrets_file(
+            '.credentials/oauth_credentials.json',
+            SCOPES
+        )
+
+        print("🔗 Abrindo browser para autenticação...")
+        print("   Se o browser não abrir, acesse manualmente o link mostrado\n")
+
+        # Obtém as credenciais
+        creds = flow.run_local_server(port=8080)
+
+        # Salva o token com refresh_token
+        Path('.credentials').mkdir(exist_ok=True)
+
+        token_data = {
+            'token': creds.token,
+            'refresh_token': creds.refresh_token,
+            'token_uri': creds.token_uri,
+            'client_id': creds.client_id,
+            'client_secret': creds.client_secret,
+            'scopes': creds.scopes,
+            'universe_domain': getattr(creds, 'universe_domain', 'googleapis.com'),
+            'account': '',
+            'expiry': creds.expiry.isoformat() if creds.expiry else None
+        }
+
+        with open(TOKEN_FILE, 'w') as f:
+            json.dump(token_data, f, indent=2)
+
+        print(f"✅ Token gerado com sucesso!")
+        print(f"📁 Arquivo salvo: {TOKEN_FILE}\n")
+
+        print("📝 Atualize seu .env com os seguintes valores:\n")
+        print(f"GOOGLE_OAUTH_TOKEN={creds.token}")
+        print(f"GOOGLE_OAUTH_TOKEN_REFRESH={creds.refresh_token}")
+        print(f"GOOGLE_OAUTH_TOKEN_URI={creds.token_uri}")
+        print(f"GOOGLE_OAUTH_EXPIRY={creds.expiry.isoformat() if creds.expiry else 'YYYY-MM-DDTHH:MM:SSZ'}\n")
+
+        print("💾 Copie também o arquivo .credentials/google_token.json para a VPS")
+        print("   Ele contém todos os dados necessários para renovação automática\n")
+
+        return True
+
+    except FileNotFoundError:
+        print("❌ Arquivo .credentials/oauth_credentials.json não encontrado")
+        print("   Execute primeiro: python3 test_oauth_google_drive.py\n")
+        return False
+    except Exception as e:
+        print(f"❌ Erro ao gerar token: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+if __name__ == '__main__':
+    import sys
+    success = gerar_token()
+    sys.exit(0 if success else 1)
