@@ -104,6 +104,12 @@ def sincronizar_google_drive(caminho_pasta, nome_pasta_destino):
             print("❌ Não foi possível obter credenciais")
             return None
 
+        print(f"DEBUG - Credentials object: {creds}")
+        print(f"DEBUG - Has refresh_token: {creds.refresh_token is not None}")
+        print(f"DEBUG - Has token_uri: {creds.token_uri is not None}")
+        print(f"DEBUG - Has client_id: {creds.client_id is not None}")
+        print(f"DEBUG - Has client_secret: {creds.client_secret is not None}")
+
         service = build('drive', 'v3', credentials=creds)
 
         # Verifica se pasta já existe no Drive (por nome)
@@ -159,7 +165,16 @@ def sincronizar_google_drive(caminho_pasta, nome_pasta_destino):
         return folder_id
 
     except Exception as e:
+        error_str = str(e)
         print(f"❌ Erro ao sincronizar Drive: {e}")
+
+        # Se for erro de refresh token, sugere solução
+        if "refresh the access token" in error_str or "RefreshError" in str(type(e)):
+            print("\n⚠️ IMPORTANTE: Token expirou ou precisa ser renovado!")
+            print("   Token atual: token de curta duração sem refresh_token")
+            print("   Solução: Executar google_token_refresh.py com --force")
+            print("   Ou: Aguardar até que o token expire e fazer nova autenticação")
+
         import traceback
         traceback.print_exc()
         return None

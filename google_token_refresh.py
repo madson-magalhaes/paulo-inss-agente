@@ -65,9 +65,25 @@ def refresh_access_token():
         print(f"DEBUG - Tentando renovar com refresh_token...")
         return refresh_with_refresh_token()
 
-    # Se não tiver refresh_token, tenta usar o fluxo de credenciais
-    print(f"DEBUG - Refresh token não disponível")
-    print(f"DEBUG - O token será renovado apenas quando expirar e houver nova autenticação")
+    # Se não tiver refresh_token, informa situação
+    print(f"⚠️ Refresh token não disponível")
+    print(f"DEBUG - Token atual: {TOKEN[:30]}...")
+    print(f"DEBUG - Expiração: {EXPIRY_STR}")
+
+    # Verifica expiração
+    expiry = parse_expiry(EXPIRY_STR)
+    if expiry:
+        time_until_expiry = expiry - datetime.now(expiry.tzinfo)
+        minutes_left = time_until_expiry.total_seconds() / 60
+        print(f"DEBUG - Tempo até expiração: {minutes_left:.1f} minutos")
+
+        if minutes_left > 5:
+            print(f"✅ Token ainda válido por mais {minutes_left:.0f} minutos")
+            return True
+
+    print(f"⚠️ Token expirado ou prestes a expirar")
+    print(f"💡 Para renovar sem refresh_token, você precisa fazer nova autenticação OAuth")
+    print(f"   ou usar o arquivo .credentials/google_token.json se disponível")
     return False
 
 
