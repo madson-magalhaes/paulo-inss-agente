@@ -60,6 +60,9 @@ def coletar_orcamentos():
         url = os.getenv('SUPABASE_URL')
         key = os.getenv('SUPABASE_KEY')
 
+        print(f"DEBUG - URL: {url}")
+        print(f"DEBUG - Key: {key[:20]}..." if key else "DEBUG - Key: None")
+
         if not url or not key:
             print("❌ SUPABASE_URL ou SUPABASE_KEY não configurado em .env")
             return {}
