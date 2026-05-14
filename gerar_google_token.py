@@ -200,30 +200,31 @@ def gerar_token():
         print("\n⏳ Aguardando autorização...")
         print("   (O navegador irá redirecionar automaticamente)\n")
 
-        # Aguarda o código chegar via callback (máximo 5 minutos)
+        # Aguarda o código chegar via callback (máximo 10 segundos após o recebimento)
         import time
         timeout = 300  # 5 minutos
         elapsed = 0
         while elapsed < timeout:
-            if not server_running or authorization_code:
+            if authorization_code:
+                print(f"\n✅ Código de autorização recebido!")
+                time.sleep(1)  # Aguarda a página ser renderizada
+                break
+            if not server_running:
                 break
             time.sleep(0.5)
             elapsed += 0.5
-            if elapsed % 10 == 0:
-                print(f"DEBUG - Aguardando... ({int(elapsed)}s)")
 
         # Para o servidor
         try:
             server.shutdown()
-        except:
-            pass
+            print("DEBUG - Servidor parado")
+        except Exception as e:
+            print(f"DEBUG - Erro ao parar servidor: {e}")
 
         if not authorization_code:
             print("❌ Timeout: nenhuma autorização recebida em 5 minutos")
             print("   Verifique se o navegador redirecionou para http://localhost:8080")
             return False
-
-        print(f"✅ Código de autorização recebido!")
 
         # Troca o código pelo token
         try:
