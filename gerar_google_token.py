@@ -12,8 +12,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 try:
-    from google.auth.transport.requests import Request
-    from google.oauth2.credentials import Credentials
     from google_auth_oauthlib.flow import InstalledAppFlow
 except ImportError:
     print("❌ Bibliotecas necessárias não encontradas")
@@ -51,11 +49,32 @@ def gerar_token():
             SCOPES
         )
 
-        print("🔗 Abrindo browser para autenticação...")
-        print("   Se o browser não abrir, acesse manualmente o link mostrado\n")
+        print("\n" + "=" * 80)
+        print("🔗 ACESSO GOOGLE OAUTH - COPY & PASTE")
+        print("=" * 80 + "\n")
 
-        # Obtém as credenciais
-        creds = flow.run_local_server(port=8080)
+        # Gera a URL de autenticação
+        auth_uri, _ = flow.authorization_url(prompt='consent')
+
+        print("📋 Copie este link e cole no seu navegador preferido:\n")
+        print(f"🔗 {auth_uri}\n")
+
+        print("=" * 80)
+        print("\n✅ Após autorizar, você receberá um código")
+        print("📝 Cole o código abaixo e pressione ENTER\n")
+
+        # Aguarda o código
+        auth_code = input("🔑 Digite o código de autorização: ").strip()
+
+        if not auth_code:
+            print("❌ Código não fornecido")
+            return False
+
+        # Troca o código pelo token
+        flow.fetch_token(code=auth_code)
+        creds = flow.credentials
+
+        print("\n✅ Autenticação bem-sucedida!")
 
         # Salva o token com refresh_token
         Path('.credentials').mkdir(exist_ok=True)
