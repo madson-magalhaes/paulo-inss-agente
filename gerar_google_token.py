@@ -23,6 +23,55 @@ CLIENT_ID = os.getenv('GOOGLE_OAUTH_CLIENT_ID', '')
 CLIENT_SECRET = os.getenv('GOOGLE_OAUTH_CLIENT_SECRET', '')
 SCOPES = ['https://www.googleapis.com/auth/drive']
 TOKEN_FILE = '.credentials/google_token.json'
+ENV_FILE = '.env'
+
+
+def update_env_with_token(creds):
+    """Atualiza o arquivo .env com os novos valores de token"""
+    try:
+        import re
+        from datetime import datetime
+
+        print("\n📝 Atualizando arquivo .env...\n")
+
+        # Lê o arquivo atual
+        with open(ENV_FILE, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        expiry_str = creds.expiry.isoformat().replace('+00:00', 'Z') if creds.expiry else ''
+
+        # Atualiza cada valor
+        updates = {
+            'GOOGLE_OAUTH_TOKEN': creds.token,
+            'GOOGLE_OAUTH_TOKEN_REFRESH': creds.refresh_token or '',
+            'GOOGLE_OAUTH_TOKEN_URI': creds.token_uri,
+            'GOOGLE_OAUTH_EXPIRY': expiry_str,
+        }
+
+        for key, value in updates.items():
+            # Procura a linha e substitui o valor
+            pattern = f'{key}=.*'
+            content = re.sub(pattern, f'{key}={value}', content)
+            print(f"   ✓ {key}")
+
+        # Escreve de volta
+        with open(ENV_FILE, 'w', encoding='utf-8') as f:
+            f.write(content)
+
+        print(f"\n✅ Arquivo .env atualizado com sucesso!")
+        print(f"\n📋 Valores salvos:")
+        print(f"   • Token: {creds.token[:40]}...")
+        print(f"   • Refresh Token: {creds.refresh_token[:40] if creds.refresh_token else 'NONE'}...")
+        print(f"   • Token URI: {creds.token_uri}")
+        print(f"   • Expiry: {expiry_str}")
+
+        return True
+
+    except Exception as e:
+        print(f"❌ Erro ao atualizar .env: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
 
 
 def gerar_token():
@@ -91,20 +140,18 @@ def gerar_token():
             'expiry': creds.expiry.isoformat() if creds.expiry else None
         }
 
+        # Salva também em arquivo .credentials
         with open(TOKEN_FILE, 'w') as f:
             json.dump(token_data, f, indent=2)
 
         print(f"✅ Token gerado com sucesso!")
         print(f"📁 Arquivo salvo: {TOKEN_FILE}\n")
 
-        print("📝 Atualize seu .env com os seguintes valores:\n")
-        print(f"GOOGLE_OAUTH_TOKEN={creds.token}")
-        print(f"GOOGLE_OAUTH_TOKEN_REFRESH={creds.refresh_token}")
-        print(f"GOOGLE_OAUTH_TOKEN_URI={creds.token_uri}")
-        print(f"GOOGLE_OAUTH_EXPIRY={creds.expiry.isoformat() if creds.expiry else 'YYYY-MM-DDTHH:MM:SSZ'}\n")
+        # Atualiza o .env com os novos valores
+        update_env_with_token(creds)
 
-        print("💾 Copie também o arquivo .credentials/google_token.json para a VPS")
-        print("   Ele contém todos os dados necessários para renovação automática\n")
+        print("\n💾 Arquivo .env atualizado automaticamente!")
+        print("   Próximo passo: copie o arquivo .credentials/google_token.json para a VPS\n")
 
         return True
 
