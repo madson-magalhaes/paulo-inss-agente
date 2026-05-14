@@ -1,0 +1,134 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║           FLUXO DE DEPLOY DO .env PARA VPS                                ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+📁 ESTRUTURA ATUAL (LOCAL):
+─────────────────────────────────────────────────────────────────────────────
+  v6_agente_ia/
+  ├── .env                          ← SENSÍVEL (tem credenciais)
+  │   ├── SUPABASE_URL
+  │   ├── SUPABASE_KEY
+  │   ├── GOOGLE_SERVICE_ACCOUNT_*
+  │   └── SMTP_*
+  ├── .env.example                  ← PUBLICO (template sem valores)
+  ├── .gitignore                    ← Exclui .env do commit
+  │   └── .env
+  └── DEPLOYMENT.md                 ← Este guia
+
+
+🔄 FLUXO DE DEPLOYMENT:
+─────────────────────────────────────────────────────────────────────────────
+
+1️⃣  LOCAL (Sua máquina)
+    $ git add .env.example
+    $ git add DEPLOYMENT.md
+    $ git commit -m "Add deployment guide"
+    $ git push origin main
+    
+    ✓ Commit APENAS do .env.example (sem valores sensíveis)
+    ✓ .env NÃO é commitado (está no .gitignore)
+
+2️⃣  VPS (Remote)
+    $ git clone seu_repo
+    $ git pull origin main
+    
+    ✓ Recebe apenas .env.example
+    ✓ Não recebe arquivo .env
+
+3️⃣  VPS - ADICIONAR VARIÁVEIS SENSÍVEIS
+    
+    Opção A - Via SCP (mais segura):
+    ──────────────────────────────
+    Na sua máquina local:
+    $ scp .env seu_usuario@vps:/var/www/v6_agente_ia/
+    
+    Na VPS:
+    $ chmod 600 .env
+    $ ls -la .env
+    
+    
+    Opção B - Manualmente via Nano (se necessário):
+    ────────────────────────────────────────────────
+    Na VPS:
+    $ cp .env.example .env.local
+    $ nano .env.local
+    # Colar as credenciais reais aqui
+    $ chmod 600 .env.local
+    
+    
+    Opção C - Variáveis de Ambiente do Sistema:
+    ───────────────────────────────────────────
+    Na VPS, editar o arquivo systemd service:
+    $ sudo nano /etc/systemd/system/agente-ia.service
+    
+    [Service]
+    Environment="SUPABASE_URL=https://..."
+    Environment="GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY=..."
+    # ... etc
+
+
+✅ SEGURANÇA:
+─────────────────────────────────────────────────────────────────────────────
+  ✓ .env NUNCA é commitado
+  ✓ .env.example serve de template versionado
+  ✓ Credenciais reais ficam apenas localmente
+  ✓ SCP usa SSH (criptografia)
+  ✓ Permissões 600 (-rw-------)
+
+
+📊 COMPARAÇÃO DE OPÇÕES:
+─────────────────────────────────────────────────────────────────────────────
+Opção            Segurança    Facilidade    Automação    Recomendado
+─────────────────────────────────────────────────────────────────────────────
+A - SCP          ⭐⭐⭐⭐⭐    ⭐⭐⭐        Baixa       ✓ Simples e seguro
+B - Nano Manual  ⭐⭐⭐⭐     ⭐⭐⭐        Baixa       ✓ Para uma única vez
+C - Systemd      ⭐⭐⭐       ⭐           Alta        ✓ Para CI/CD
+D - Hybrid       ⭐⭐⭐⭐     ⭐⭐⭐⭐      Alta        ✓ Melhor balance
+
+
+🚀 PASSO A PASSO RECOMENDADO:
+─────────────────────────────────────────────────────────────────────────────
+
+LOCAL (agora):
+  1. ✓ .env.example criado ✓
+  2. ✓ .env no .gitignore ✓
+  3. ✓ DEPLOYMENT.md criado ✓
+  4. $ git add .env.example DEPLOYMENT.md
+  5. $ git commit -m "Add deployment configuration"
+  6. $ git push
+
+VPS (quando clonar):
+  1. $ git clone seu_repo
+  2. $ cd v6_agente_ia
+  3. (Recebe .env.example e DEPLOYMENT.md)
+  4. $ scp seu_usuario@local:/Users/.../v6_agente_ia/.env ./.env
+     OU
+  4. $ cp .env.example .env && nano .env
+  5. $ chmod 600 .env
+  6. $ python3 -m venv venv
+  7. $ source venv/bin/activate
+  8. $ pip install -r requirements.txt
+  9. $ python3 google_drive_sync.py 12052601  (teste)
+  10. (Configure cron se necessário)
+
+
+🔐 CREDENCIAIS CRÍTICAS NO .env:
+─────────────────────────────────────────────────────────────────────────────
+  🔑 GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
+     └─ A chave privada (NUNCA COMMITAR!)
+  
+  🔑 SUPABASE_KEY
+     └─ API key do Supabase (NUNCA COMMITAR!)
+  
+  🔑 SMTP_PASSWORD
+     └─ Senha de email (NUNCA COMMITAR!)
+
+
+💡 DICAS EXTRAS:
+─────────────────────────────────────────────────────────────────────────────
+1. Faça backup de .env em local seguro antes de fazer deploy
+2. Use .env.local para sobrescrever valores em desenvolvimento
+3. Configure alertas se o arquivo .env for modificado sem autorização
+4. Rotacione credenciais periodicamente (trimestral)
+5. Nunca coloque .env em rede compartilhada (NFS, SMB, etc)
+

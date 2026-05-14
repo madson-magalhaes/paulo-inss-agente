@@ -1,0 +1,135 @@
+
+================================================================================
+COLETA DE ORÇAMENTOS - SUPABASE
+================================================================================
+
+🔌 Conectando ao Supabase...
+✓ Conexão bem-sucedida!
+
+📥 Detectando orçamentos com items em 'aberto' ou 'processando'...
+✓ 1 orçamento(s) encontrado(s)
+
+🔄 Coletando dados COMPLETOS para cada orçamento...
+✓ 1 orçamento(s) identificado(s)
+
+💾 Exportando CSVs nas pastas dos orçamentos...
+  ✓ orcamento_12052603_Luis Augusto/obra-12052603.csv (1 linha(s))
+
+================================================================================
+✅ COLETA CONCLUÍDA
+================================================================================
+Total: 1 CSV(s) criado(s)
+Localização: ./orcamentos/orcamento_XXXXX_ClientName/
+
+
+================================================================================
+VALIDAÇÃO DE ORÇAMENTOS V2 - VERIFICANDO COMPLETUDE
+================================================================================
+
+Intervalo de segurança: 60 segundos
+Ciclos de validação: 2
+Arquivo de controle: ./.claude/orcamentos_validacao_v2.json
+
+📋 12052601:
+   ⚠️ ALERTA: Nenhuma linha aberta encontrada!
+   • Processadas: 1
+   • Total: 1
+   ❌ PULANDO (orçamento já processado ou corrompido)
+📋 12052602:
+   ⚠️ ALERTA: Nenhuma linha aberta encontrada!
+   • Processadas: 2
+   • Total: 2
+   ❌ PULANDO (orçamento já processado ou corrompido)
+
+📊 RESUMO DA VALIDAÇÃO:
+   ✅ Prontos: 0
+   ⏳ Incompletos: 2
+
+⏳ ORÇAMENTOS A AGUARDAR:
+   • 12052601 - nenhuma_linha_aberta
+   • 12052602 - nenhuma_linha_aberta
+
+================================================================================
+RESULTADO FINAL
+================================================================================
+
+✅ PRONTOS PARA PROCESSAR:
+
+⏳ AGUARDANDO:
+   • 12052601 (nenhuma_linha_aberta)
+   • 12052602 (nenhuma_linha_aberta)
+
+================================================================================
+MARCAR COMO PROCESSANDO
+================================================================================
+
+✓ Conexão bem-sucedida!
+
+📥 Coletando orçamentos com status 'aberto'...
+⚠️ Nenhum orçamento em 'aberto'
+
+================================================================================
+PIPELINE AUTOMÁTICO - COLETA E PROCESSAMENTO
+================================================================================
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                      ETAPA 1: COLETAR DADOS DO SUPABASE                      ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+================================================================================
+Coletando orçamentos...
+================================================================================
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                     ETAPA 2: VALIDAR E ORGANIZAR PASTAS                      ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+================================================================================
+Organizando pastas...
+================================================================================
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                     ETAPA 2.5: MARCAR COMO 'PROCESSANDO'                     ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+================================================================================
+Marcando 'aberto' → 'processando'...
+================================================================================
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                     ETAPA 2.6: VALIDAR AGUARDO DE CICLO                      ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+================================================================================
+VALIDAR PRONTOS COM AGUARDO DE CICLO
+================================================================================
+
+📥 Coletando orçamentos em 'processando'...
+✓ 1 orçamento(s) em 'processando'
+
+📥 Coletando orçamentos em 'aberto'...
+✓ 0 orçamento(s) em 'aberto'
+
+⏳ Validando aguardo de ciclo...
+
+  🔄 12052603: AGUARDANDO (ciclo 1/2)
+     └─ Marcado agora, volta no próximo ciclo
+
+📊 RESUMO
+  ✅ Prontos: 0
+  ⏳ Aguardando: 1
+
+⏳ AGUARDANDO:
+  • 12052603 (primeiro_ciclo)
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                    ETAPA 3: PROCESSAR ORÇAMENTOS PRONTOS                     ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+⏳ Nenhum orçamento pronto para processar
+   (Aguardando próximo ciclo)
+

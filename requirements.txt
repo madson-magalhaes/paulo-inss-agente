@@ -1,0 +1,12 @@
+# Core dependencies
+python-dotenv==1.0.0
+supabase==2.0.2
+pandas==2.0.3
+
+# Google Drive OAuth
+google-auth-oauthlib==1.2.0
+google-auth-httplib2==0.2.0
+google-api-python-client==2.104.0
+
+# Optional: for email notifications
+# python-email-validator==2.0.0
