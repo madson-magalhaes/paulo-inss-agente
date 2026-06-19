@@ -57,12 +57,20 @@ def inserir_dados_paulo_inss(numero_orcamento):
         pasta_nome = os.path.basename(pasta_orc)
         nome_cliente = pasta_nome.replace(f"orcamento_{numero_orcamento}_", "").strip()
 
-        arquivos_inss = list(pasta_orc.glob("inss-*.csv"))
+        # Procura pelo arquivo otimizado (melhor cenário) primeiro
+        arquivos_inss = list(pasta_orc.glob("inss-*-otimizado.csv"))
         arquivo_inss = None
-        for arq in arquivos_inss:
-            if "otimizado" not in arq.name:
-                arquivo_inss = arq
-                break
+
+        if arquivos_inss:
+            # Usa arquivo otimizado (melhor cenário)
+            arquivo_inss = arquivos_inss[0]
+        else:
+            # Fallback para arquivo base se otimizado não existir
+            arquivos_inss = list(pasta_orc.glob("inss-*.csv"))
+            for arq in arquivos_inss:
+                if "otimizado" not in arq.name:
+                    arquivo_inss = arq
+                    break
 
         if not arquivo_inss:
             print(f"⚠️ Arquivo INSS não encontrado")
@@ -99,14 +107,26 @@ def inserir_dados_paulo_inss(numero_orcamento):
             # Extrai honorários
             if "[PARÂMETROS E OPERAÇÃO]" in content:
                 for line in content.split('\n'):
-                    if "Honorários Estimados" in line:
+                    if "Honorários Estimados" in line and "Percentual" not in line:
                         parts = [p.strip() for p in line.split(',')]
                         if len(parts) >= 2:
                             try:
-                                valor_str = parts[1].replace('R$', '').replace('.', '').replace(',', '.').strip()
+                                # Remove R$ e espaços
+                                valor_str = parts[1].strip()
+                                if 'R$' in valor_str:
+                                    valor_str = valor_str.replace('R$', '').strip()
+
+                                # Detecta o formato:
+                                # - Brasilero (1.234.567,89): tem vírgula como último separador
+                                # - Decimal (2193.03): tem ponto como último separador
+                                if ',' in valor_str:
+                                    # Formato brasileiro
+                                    valor_str = valor_str.replace('.', '').replace(',', '.')
+                                # else: já está em formato decimal correto
+
                                 honorarios = float(valor_str)
-                            except:
-                                pass
+                            except Exception as e:
+                                print(f"   ⚠️ Erro ao extrair honorários: {e}")
                         break
 
         if not inss_sem_reducao or not inss_otimizado:
