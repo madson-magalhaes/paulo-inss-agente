@@ -28,6 +28,14 @@ from io_handlers import (
     exibir_resultado_completo,
     carregar_vau_csv
 )
+from optimization_distribution import (
+    carregar_tabela_remuneracao,
+    carregar_distribuicao_csv,
+    otimizar_distribuicao,
+    exportar_csv_otimizado,
+    coletar_avisos_otimizacao
+)
+import copy
 
 
 def main():
@@ -64,16 +72,75 @@ def main():
         exportar_csv_resumo(resultado, arquivo_distribuicao, paralisacao_set=paralisacao_set, mes_vau=mes_vau)
         print(f"✓ Arquivo gerado: inss-{nome_base}.csv")
 
-        # OTIMIZAÇÃO (opcional - gera usando resultado como base)
+        # OTIMIZAÇÃO - Distribuição otimizada de recibos
         try:
-            # Cria versão otimizada copiando o resultado padrão
-            # (otimização completa requer análise mais aprofundada)
+            print("\n" + "=" * 80)
+            print("OTIMIZAÇÃO DE DISTRIBUIÇÃO DE RECIBOS")
+            print("=" * 80 + "\n")
+
+            # Carrega tabela de limites e distribuição
+            print("📊 Carregando dados para otimização...")
+            tabela_limites = carregar_tabela_remuneracao()
+            meses, _ = carregar_distribuicao_csv(arquivo_distribuicao)
+
+            # Extrai RMT do arquivo de distribuição
+            rmt_esperado = 0.0
+            with open(arquivo_distribuicao, 'r', encoding='utf-8-sig') as f:
+                for line in f:
+                    if 'RMT Otimizado Final' in line:
+                        parts = line.split(',')
+                        if len(parts) >= 2:
+                            rmt_esperado = float(parts[1].strip())
+                        break
+
+            # Otimização automática
+            print("\n🔄 Calculando distribuição otimizada...")
+            data_analise = datetime.now()
+            meses_otimizados = otimizar_distribuicao(
+                copy.deepcopy(meses),
+                tabela_limites,
+                data_analise,
+                'autonomo'
+            )
+
+            # Resumo
+            max_autonomos = max((m.qtd_autonomos for m in meses_otimizados), default=0)
+            inss_total = sum(m.total_otimizado for m in meses_otimizados)
+
+            print(f"\n✓ Otimização concluída!")
+            print(f"  💼 Autônomos recomendados: {max_autonomos}")
+            print(f"  💰 INSS Total: R$ {inss_total:,.2f}")
+
+            # Extrai INSS original do arquivo de distribuição para calcular economia
+            inss_original = 0.0
+            with open(arquivo_distribuicao, 'r', encoding='utf-8-sig') as f:
+                for line in f:
+                    if 'INSS sem Otimização,' in line:
+                        parts = line.split(',')
+                        if len(parts) >= 2:
+                            inss_original = float(parts[1].strip())
+                        break
+
+            # Coleta avisos da otimização
+            avisos = coletar_avisos_otimizacao(meses_otimizados, rmt_esperado)
+
+            # Exporta otimização (na mesma pasta da entrada)
             arquivo_otimizado = os.path.join(pasta_entrada, f"inss-{nome_base}-otimizado.csv")
-            print(f"\n💾 Gerando: inss-{nome_base}-otimizado.csv...")
-            exportar_csv_resumo(resultado, arquivo_otimizado, paralisacao_set=paralisacao_set, mes_vau=mes_vau)
-            print(f"✓ Arquivo gerado: inss-{nome_base}-otimizado.csv")
+            exportar_csv_otimizado(
+                meses_otimizados,
+                arquivo_otimizado,
+                'autonomo',
+                arquivo_distribuicao,
+                avisos,
+                inss_original,
+                data_analise
+            )
+            print(f"\n💾 Arquivo gerado: {arquivo_otimizado}")
+
         except Exception as e:
             print(f"\n⚠️ Aviso: Não foi possível gerar versão otimizada: {e}")
+            import traceback
+            traceback.print_exc()
 
         print("\n" + "=" * 80)
         print("✅ PROCESSAMENTO CONCLUÍDO")
