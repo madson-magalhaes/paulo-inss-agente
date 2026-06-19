@@ -32,6 +32,58 @@ def salvar_sincronizacoes(dados):
     with open(ARQUIVO_SINCRONIZACOES, 'w', encoding='utf-8') as f:
         json.dump(dados, f, indent=2)
 
+def extrair_dados_inss(arquivo_path):
+    """Extrai dados INSS de um arquivo CSV"""
+    dados = {
+        'inss_cenario_3': None,
+        'telefone': None,
+        'honorarios': None,
+    }
+
+    with open(arquivo_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+
+        # Extrai INSS do Cenário 3 (Otimizado)
+        if "MATRIZ DE COMPARAÇÃO TRIBUTÁRIA" in content:
+            for line in content.split('\n'):
+                line = line.strip()
+                if line.startswith("3. Otimizado"):
+                    parts = [p.strip() for p in line.split(',')]
+                    if len(parts) >= 5:
+                        try:
+                            dados['inss_cenario_3'] = float(parts[4].replace(',', '.'))
+                        except:
+                            pass
+
+        # Extrai telefone
+        if "[DADOS DO PROJETO]" in content:
+            for line in content.split('\n'):
+                if "Telefone do Contato" in line:
+                    parts = [p.strip() for p in line.split(',')]
+                    if len(parts) >= 2:
+                        dados['telefone'] = parts[1]
+                    break
+
+        # Extrai honorários
+        if "[PARÂMETROS E OPERAÇÃO]" in content:
+            for line in content.split('\n'):
+                if "Honorários Estimados" in line and "Percentual" not in line:
+                    parts = [p.strip() for p in line.split(',')]
+                    if len(parts) >= 2:
+                        try:
+                            valor_str = parts[1].strip()
+                            if 'R$' in valor_str:
+                                valor_str = valor_str.replace('R$', '').strip()
+                            if ',' in valor_str:
+                                valor_str = valor_str.replace('.', '').replace(',', '.')
+                            dados['honorarios'] = float(valor_str)
+                        except Exception as e:
+                            print(f"   ⚠️ Erro ao extrair honorários: {e}")
+                    break
+
+    return dados
+
+
 def inserir_dados_paulo_inss(numero_orcamento):
     """Insere dados resumidos do INSS na tabela paulo_inss"""
     try:
@@ -57,98 +109,90 @@ def inserir_dados_paulo_inss(numero_orcamento):
         pasta_nome = os.path.basename(pasta_orc)
         nome_cliente = pasta_nome.replace(f"orcamento_{numero_orcamento}_", "").strip()
 
-        # Procura pelo arquivo otimizado (melhor cenário) primeiro
-        arquivos_inss = list(pasta_orc.glob("inss-*-otimizado.csv"))
-        arquivo_inss = None
+        # Procura ambos os arquivos (base e otimizado)
+        arquivo_base = None
+        arquivo_otimizado = None
 
-        if arquivos_inss:
-            # Usa arquivo otimizado (melhor cenário)
-            arquivo_inss = arquivos_inss[0]
-        else:
-            # Fallback para arquivo base se otimizado não existir
-            arquivos_inss = list(pasta_orc.glob("inss-*.csv"))
-            for arq in arquivos_inss:
-                if "otimizado" not in arq.name:
-                    arquivo_inss = arq
-                    break
+        arquivos_inss = list(pasta_orc.glob("inss-*.csv"))
+        for arq in arquivos_inss:
+            if "otimizado" in arq.name:
+                arquivo_otimizado = arq
+            else:
+                arquivo_base = arq
 
-        if not arquivo_inss:
-            print(f"⚠️ Arquivo INSS não encontrado")
+        if not arquivo_base and not arquivo_otimizado:
+            print(f"⚠️ Nenhum arquivo INSS encontrado")
             return False
 
+        # Extrai dados de ambos os arquivos
+        dados_base = None
+        dados_otimizado = None
+
+        if arquivo_base:
+            dados_base = extrair_dados_inss(arquivo_base)
+        if arquivo_otimizado:
+            dados_otimizado = extrair_dados_inss(arquivo_otimizado)
+
+        # Seleciona o melhor cenário (menor INSS)
+        melhor_dados = None
+        arquivo_usado = None
+
+        if dados_base and dados_otimizado:
+            # Ambos existem - compara
+            if dados_base['inss_cenario_3'] and dados_otimizado['inss_cenario_3']:
+                if dados_otimizado['inss_cenario_3'] < dados_base['inss_cenario_3']:
+                    melhor_dados = dados_otimizado
+                    arquivo_usado = "otimizado"
+                else:
+                    melhor_dados = dados_base
+                    arquivo_usado = "base"
+        elif dados_otimizado:
+            melhor_dados = dados_otimizado
+            arquivo_usado = "otimizado"
+        elif dados_base:
+            melhor_dados = dados_base
+            arquivo_usado = "base"
+
+        if not melhor_dados or not melhor_dados['inss_cenario_3']:
+            print(f"⚠️ Não foi possível extrair INSS dos arquivos")
+            return False
+
+        print(f"   Usando cenário {arquivo_usado} (INSS: R$ {melhor_dados['inss_cenario_3']:,.2f})")
+
+        # Extrai também o INSS do Cenário 1 (sem redução) do melhor arquivo
         inss_sem_reducao = None
-        inss_otimizado = None
-        telefone = None
-        honorarios = None
-
-        with open(arquivo_inss, 'r', encoding='utf-8') as f:
-            content = f.read()
-
-            if "MATRIZ DE COMPARAÇÃO TRIBUTÁRIA" in content:
-                for line in content.split('\n'):
-                    line = line.strip()
+        if arquivo_base:
+            with open(arquivo_base, 'r', encoding='utf-8') as f:
+                for line in f:
                     if line.startswith("1. Padrão"):
                         parts = [p.strip() for p in line.split(',')]
                         if len(parts) >= 5:
-                            inss_sem_reducao = float(parts[4].replace(',', '.'))
-                    if line.startswith("3. Otimizado"):
-                        parts = [p.strip() for p in line.split(',')]
-                        if len(parts) >= 5:
-                            inss_otimizado = float(parts[4].replace(',', '.'))
-
-            if "[DADOS DO PROJETO]" in content:
-                for line in content.split('\n'):
-                    if "Telefone do Contato" in line:
-                        parts = [p.strip() for p in line.split(',')]
-                        if len(parts) >= 2:
-                            telefone = parts[1]
-                        break
-
-            # Extrai honorários
-            if "[PARÂMETROS E OPERAÇÃO]" in content:
-                for line in content.split('\n'):
-                    if "Honorários Estimados" in line and "Percentual" not in line:
-                        parts = [p.strip() for p in line.split(',')]
-                        if len(parts) >= 2:
                             try:
-                                # Remove R$ e espaços
-                                valor_str = parts[1].strip()
-                                if 'R$' in valor_str:
-                                    valor_str = valor_str.replace('R$', '').strip()
-
-                                # Detecta o formato:
-                                # - Brasilero (1.234.567,89): tem vírgula como último separador
-                                # - Decimal (2193.03): tem ponto como último separador
-                                if ',' in valor_str:
-                                    # Formato brasileiro
-                                    valor_str = valor_str.replace('.', '').replace(',', '.')
-                                # else: já está em formato decimal correto
-
-                                honorarios = float(valor_str)
-                            except Exception as e:
-                                print(f"   ⚠️ Erro ao extrair honorários: {e}")
+                                inss_sem_reducao = float(parts[4].replace(',', '.'))
+                            except:
+                                pass
                         break
 
-        if not inss_sem_reducao or not inss_otimizado:
-            print(f"⚠️ Não foi possível extrair valores INSS")
-            return False
+        if not inss_sem_reducao:
+            inss_sem_reducao = melhor_dados['inss_cenario_3']  # Fallback
 
-        percentual_economia = ((inss_sem_reducao - inss_otimizado) / inss_sem_reducao) * 100
+        percentual_economia = ((inss_sem_reducao - melhor_dados['inss_cenario_3']) / inss_sem_reducao) * 100 if inss_sem_reducao > 0 else 0
 
         dados_inss = {
             'nome': nome_cliente,
-            'telefone': telefone or '',
+            'telefone': melhor_dados['telefone'] or '',
             'numero_orcamento': int(numero_orcamento),
             'inss_sem_reducao': inss_sem_reducao,
-            'inss_otimizado': inss_otimizado,
+            'inss_otimizado': melhor_dados['inss_cenario_3'],
             'percentual_economia': percentual_economia,
-            'honorarios': honorarios or 0.0,
+            'honorarios': melhor_dados['honorarios'] or 0.0,
         }
 
         print(f"   Nome: {nome_cliente}")
         print(f"   INSS sem redução: R$ {inss_sem_reducao:.2f}")
-        print(f"   INSS otimizado: R$ {inss_otimizado:.2f}")
+        print(f"   INSS final: R$ {melhor_dados['inss_cenario_3']:.2f}")
         print(f"   Economia: {percentual_economia:.2f}%")
+        print(f"   Honorários: R$ {melhor_dados['honorarios']:.2f}" if melhor_dados['honorarios'] else "")
 
         response = client.table('paulo_inss').insert(dados_inss).execute()
 
