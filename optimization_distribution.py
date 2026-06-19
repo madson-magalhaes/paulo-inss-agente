@@ -284,6 +284,17 @@ def exportar_csv_otimizado(meses: List[MesDistribuicao], arquivo_saida: str, mod
     inss_otim = sum(m.total_otimizado for m in meses)
     s_recibo = sum(m.recibo_otimizado for m in meses)
     
+    # Importa funções para calcular honorários baseado na metragem
+    try:
+        from io_handlers import carregar_honorarios_csv, obter_percentual_honorario
+        honorarios_dict = carregar_honorarios_csv()
+    except:
+        honorarios_dict = {
+            'area_minima': [0.0],
+            'area_maxima': [999999.0],
+            'percentual': [30.0]
+        }
+
     with open(arquivo_saida, 'w', encoding='utf-8', newline='') as f:
         writer = csv.writer(f)
         if arquivo_base_csv and os.path.exists(arquivo_base_csv):
@@ -294,7 +305,18 @@ def exportar_csv_otimizado(meses: List[MesDistribuicao], arquivo_saida: str, mod
                 for r in all_rows:
                     if r and '1. Padrão (Pior)' in r[0]: inss_puro = converter_valor_csv(r[4])
             economia = inss_puro - inss_otim
-            honorarios = economia * 0.30
+
+            # Extrai área total do arquivo base para calcular percentual correto
+            area_total = 0.0
+            for r in all_rows:
+                if r and len(r) > 8 and r[0] and 'Área' in r[0] and 'Equiv' in str(r[8]):
+                    try:
+                        area_total = float(str(r[8]).replace(',', '.'))
+                    except:
+                        pass
+
+            perc_honorario = obter_percentual_honorario(area_total, honorarios_dict)
+            honorarios = economia * (perc_honorario / 100.0)
             idx_dist = next((i for i, r in enumerate(all_rows) if r and 'DISTRIBUIÇÃO MENSAL' in r[0]), -1)
             if idx_dist >= 0:
                 in_rf = False
@@ -329,7 +351,7 @@ def exportar_csv_otimizado(meses: List[MesDistribuicao], arquivo_saida: str, mod
                     elif 'NOTA:' in row[0] and 'VAU' in row[0]: writer.writerow(row)
                     elif 'ECONOMIA REAL GERADA' in row[0]: writer.writerow(['ECONOMIA REAL GERADA', '', '', '', f'{economia:.2f}'])
                     elif 'PERCENTUAL ECONOMIA' in row[0]: writer.writerow(['PERCENTUAL ECONOMIA', '', '', '', f'{(economia/inss_puro*100):.2f}%' if inss_puro > 0 else '0.00%'])
-                    elif 'Honorários Estimados' in row[0]: writer.writerow(['Honorários Estimados (30%)', f'{honorarios:.2f}'])
+                    elif 'Honorários Estimados' in row[0]: writer.writerow([f'Honorários Estimados ({perc_honorario:.0f}%)', f'{honorarios:.2f}'])
                     else: writer.writerow(row)
                 writer.writerow([])
         if avisos:
