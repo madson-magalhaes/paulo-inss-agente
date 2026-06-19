@@ -315,7 +315,13 @@ def exportar_csv_resumo(resultado: ResultadoSimulacao, arquivo_saida: str, diret
 
         # BLOCO 4: PARÂMETROS E OPERAÇÃO
         writer.writerow(['[PARÂMETROS E OPERAÇÃO]'])
-        writer.writerow(['Honorários Estimados (30%)', formatar_valor_export(economia_real * 0.30)])
+        # Calcula honorário baseado na metragem
+        honorarios = carregar_honorarios_csv()
+        area_total = sum(area.area_equivalente for area in resultado.calculos_areas) if resultado.calculos_areas else 0
+        perc_honorario = obter_percentual_honorario(area_total, honorarios)
+        valor_honorarios = economia_real * (perc_honorario / 100.0)
+        writer.writerow(['Honorários Estimados', formatar_valor_export(valor_honorarios)])
+        writer.writerow(['Percentual Honorários', formatar_percentual_export(perc_honorario)])
         writer.writerow([])
 
         # BLOCO 5: INFORMAÇÕES PARA RECEITA FEDERAL
@@ -532,7 +538,12 @@ def exibir_resultado_completo(resultado: ResultadoSimulacao, mes_vau: str = ""):
     # BLOCO 4: PARÂMETROS E OPERAÇÃO
     honorarios = economia_real * 0.30
     print("\n[PARÂMETROS E OPERAÇÃO]")
-    print(f"• Honorários Estimados (30%): {formatar_valor(honorarios)}")
+    # Calcula honorário baseado na metragem
+    honorarios_dict = carregar_honorarios_csv()
+    area_total = sum(area.area_equivalente for area in resultado.calculos_areas) if resultado.calculos_areas else 0
+    perc_honorario = obter_percentual_honorario(area_total, honorarios_dict)
+    honorarios = economia_real * (perc_honorario / 100.0)
+    print(f"• Honorários Estimados ({perc_honorario:.0f}%): {formatar_valor(honorarios)}")
     
     if resultado.info_rf:
         info = resultado.info_rf
@@ -544,3 +555,59 @@ def exibir_resultado_completo(resultado: ResultadoSimulacao, mes_vau: str = ""):
             print(f"• Última DARF Futura: {info.ultima_darf_futura}")
 
     print("\n" + "=" * 110)
+
+
+def carregar_honorarios_csv(arquivo_csv: str = 'honorarios.csv') -> Dict[str, float]:
+    """
+    Carrega a tabela de honorários por faixa de metragem de um CSV.
+
+    Retorna um dicionário com a estrutura:
+    {
+        'area_minima': [valores],
+        'area_maxima': [valores],
+        'percentual': [valores]
+    }
+    """
+    honorarios = {
+        'area_minima': [],
+        'area_maxima': [],
+        'percentual': []
+    }
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    arquivo_path = os.path.join(script_dir, arquivo_csv)
+
+    try:
+        with open(arquivo_path, 'r', encoding='utf-8-sig') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                honorarios['area_minima'].append(float(row['area_minima']))
+                honorarios['area_maxima'].append(float(row['area_maxima']))
+                honorarios['percentual'].append(float(row['percentual']))
+        return honorarios
+    except FileNotFoundError:
+        print(f"⚠️ Aviso: Arquivo {arquivo_csv} não encontrado. Usando honorário padrão de 30%")
+        return {
+            'area_minima': [0.0],
+            'area_maxima': [999999.0],
+            'percentual': [30.0]
+        }
+
+
+def obter_percentual_honorario(area_total: float, honorarios: Dict[str, float]) -> float:
+    """
+    Retorna o percentual de honorário baseado na metragem total da obra.
+
+    Args:
+        area_total: Metragem total da obra em m²
+        honorarios: Dicionário com tabela de honorários
+
+    Returns:
+        Percentual de honorário (ex: 30.0 para 30%)
+    """
+    for i, (area_min, area_max) in enumerate(zip(honorarios['area_minima'], honorarios['area_maxima'])):
+        if area_min <= area_total <= area_max:
+            return honorarios['percentual'][i]
+
+    # Fallback para última faixa
+    return honorarios['percentual'][-1]

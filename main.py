@@ -26,7 +26,9 @@ from io_handlers import (
     exportar_csv_resumo,
     exportar_json,
     exibir_resultado_completo,
-    carregar_vau_csv
+    carregar_vau_csv,
+    carregar_honorarios_csv,
+    obter_percentual_honorario
 )
 from optimization_distribution import (
     carregar_tabela_remuneracao,
