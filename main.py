@@ -28,7 +28,8 @@ from io_handlers import (
     exibir_resultado_completo,
     carregar_vau_csv,
     carregar_honorarios_csv,
-    obter_percentual_honorario
+    obter_percentual_honorario,
+    atualizar_honorarios_supabase
 )
 from optimization_distribution import (
     carregar_tabela_remuneracao,
@@ -138,6 +139,18 @@ def main():
                 data_analise
             )
             print(f"\n💾 Arquivo gerado: {arquivo_otimizado}")
+
+            # Atualiza honorários no Supabase
+            economia_real = resultado.inss_original - resultado.inss_otimizado if hasattr(resultado, 'inss_original') else 0
+            if economia_real > 0:
+                honorarios_dict = carregar_honorarios_csv()
+                area_total = sum(area.area_equivalente for area in resultado.calculos_areas) if resultado.calculos_areas else 0
+                perc_honorario = obter_percentual_honorario(area_total, honorarios_dict)
+                valor_honorarios = economia_real * (perc_honorario / 100.0)
+
+                # Extrai número do orçamento do nome do arquivo (ex: "obra-12052601" -> "12052601")
+                numero_orcamento = nome_base.split('-')[-1] if '-' in nome_base else nome_base
+                atualizar_honorarios_supabase(numero_orcamento, valor_honorarios)
 
         except Exception as e:
             print(f"\n⚠️ Aviso: Não foi possível gerar versão otimizada: {e}")

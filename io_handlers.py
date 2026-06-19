@@ -54,6 +54,55 @@ def _buscar_contato_supabase(numero_orcamento: str) -> Tuple[str, str]:
         raise Exception(f"Erro ao buscar contato no Supabase: {str(e)}")
 
 
+def atualizar_honorarios_supabase(numero_orcamento: str, valor_honorarios: float) -> bool:
+    """
+    Atualiza o valor de honorários na tabela 'paulo-inss' do Supabase.
+
+    Args:
+        numero_orcamento: Número do orçamento
+        valor_honorarios: Valor calculado de honorários
+
+    Returns:
+        True se atualizado com sucesso, False caso contrário
+    """
+    try:
+        from supabase import create_client
+        from dotenv import load_dotenv
+        import os as os_module
+        from pathlib import Path
+
+        env_path = Path(__file__).parent / '.env'
+        if env_path.exists():
+            load_dotenv(str(env_path))
+        else:
+            load_dotenv()
+
+        url = os_module.getenv('SUPABASE_URL')
+        key = os_module.getenv('SUPABASE_KEY')
+
+        if not url or not key:
+            print("⚠️  Aviso: Variáveis SUPABASE_URL ou SUPABASE_KEY não configuradas")
+            return False
+
+        client = create_client(url, key)
+
+        # Atualiza a coluna 'honorarios' na tabela 'paulo-inss'
+        response = client.table('paulo-inss').update({
+            'honorarios': valor_honorarios
+        }).eq('numero_orcamento', numero_orcamento).execute()
+
+        if response.data:
+            print(f"✅ Honorários atualizados no Supabase: R$ {valor_honorarios:,.2f}")
+            return True
+        else:
+            print(f"⚠️  Aviso: Nenhum registro encontrado para atualizar em Supabase")
+            return False
+
+    except Exception as e:
+        print(f"⚠️  Aviso: Não foi possível atualizar Supabase: {str(e)}")
+        return False
+
+
 def formatar_valor(valor: float) -> str:
     """Formata valor monetário para exibição no terminal"""
     if valor is None: return "R$ 0,00"
