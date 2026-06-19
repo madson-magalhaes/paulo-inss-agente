@@ -71,6 +71,7 @@ def inserir_dados_paulo_inss(numero_orcamento):
         inss_sem_reducao = None
         inss_otimizado = None
         telefone = None
+        honorarios = None
 
         with open(arquivo_inss, 'r', encoding='utf-8') as f:
             content = f.read()
@@ -95,6 +96,19 @@ def inserir_dados_paulo_inss(numero_orcamento):
                             telefone = parts[1]
                         break
 
+            # Extrai honorários
+            if "[PARÂMETROS E OPERAÇÃO]" in content:
+                for line in content.split('\n'):
+                    if "Honorários Estimados" in line:
+                        parts = [p.strip() for p in line.split(',')]
+                        if len(parts) >= 2:
+                            try:
+                                valor_str = parts[1].replace('R$', '').replace('.', '').replace(',', '.').strip()
+                                honorarios = float(valor_str)
+                            except:
+                                pass
+                        break
+
         if not inss_sem_reducao or not inss_otimizado:
             print(f"⚠️ Não foi possível extrair valores INSS")
             return False
@@ -108,6 +122,7 @@ def inserir_dados_paulo_inss(numero_orcamento):
             'inss_sem_reducao': inss_sem_reducao,
             'inss_otimizado': inss_otimizado,
             'percentual_economia': percentual_economia,
+            'honorarios': honorarios or 0.0,
         }
 
         print(f"   Nome: {nome_cliente}")
