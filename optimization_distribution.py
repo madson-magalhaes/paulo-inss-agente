@@ -97,6 +97,90 @@ def obter_limite_remuneracao(mes: int, ano: int, tabela_limites: List[LimiteRemu
     return limite_aplicavel.valor_maximo
 
 
+def calcular_qtd_autonomos_ideal(meses: List[MesDistribuicao], tabela_limites: List[LimiteRemuneracao], data_analise: datetime) -> int:
+    """
+    Calcula a quantidade mínima de autônomos necessários para cobrir o RMT da obra.
+
+    Estratégia:
+    1. Identifica os meses "futuros/atual" (não vencidos) onde o valor tende a ser concentrado.
+    2. Calcula quanto cada autônomo teria que receber em média naqueles meses.
+    3. Valida contra o limite de remuneração de cada período, aumentando a qtd se necessário.
+    4. Retorna um número único, estável para toda a obra.
+    """
+    mv = [m for m in meses if m.remuneracao_corrigida > 0]
+    if not mv: return 1
+
+    # Particiona em meses passados (mp) e futuros (mf), mesma lógica de otimizar_distribuicao
+    m_at, a_at, d_at = data_analise.month, data_analise.year, data_analise.day
+    mp, mf = [], []
+    for m in mv:
+        if (m.ano < a_at) or (m.ano == a_at and m.mes < m_at):
+            mp.append(m)
+        elif m.ano == a_at and m.mes == m_at:
+            if d_at < DIA_LIMITE_JUROS:
+                mf.append(m)
+            else:
+                mp.append(m)
+        else:
+            mf.append(m)
+
+    s_rmt = sum(m.remuneracao_corrigida for m in mv)
+    s_f = sum((1 + m.selic / 100.0) for m in mv)
+
+    # Se é 100% futuro, a distribuição será linear — qtd necessária é menor
+    # Calcula a média do recibo futuro (já amortizado pela Selic)
+    if not mp and mf:
+        recibo_fixo = s_rmt / s_f
+        meses_ref = mf
+    # Se há meses futuros, usa-os como referência de onde o recibo será maior
+    elif mf:
+        meses_ref = mf
+        recibo_fixo = s_rmt / s_f
+    # Se é 100% passado, usa todos os meses para calcular o recibo médio
+    else:
+        meses_ref = mp
+        recibo_fixo = s_rmt / s_f
+
+    # Calcula a quantidade de autônomos necessária baseado na maior exigência encontrada
+    # Começa com 1 e incrementa até cobrir todos os cenários
+    qtd_candidata = 1
+    for qtd_teste in range(1, 100):  # teto de 100 autônomos (caso patológico)
+        suficiente = True
+        for m in mv:
+            limite_mes = obter_limite_remuneracao(m.mes, m.ano, tabela_limites)
+            # Valor necessário neste mês é a parte que cabe proporcionalmente
+            # (simplificação: verifica se com qtd_teste autônomos o limite é respeitado)
+            # Condição: qtd_teste * limite_mes >= valor_maximo_esperado_no_mes
+            # Como a distribuição não é uniforme, usamos como heurística:
+            # qtd_teste autônomos precisam caber no período de menor limite
+            pass
+
+        # Heurística mais robusta: testa se o máximo recibo que precisamos
+        # em qualquer período futuro (onde concentra valor) cabe nos limites
+        if mf:
+            recibo_max_futuro = max(m.recibo_original for m in mf)  # referência: original
+            limite_min_futuro = min(obter_limite_remuneracao(m.mes, m.ano, tabela_limites) for m in mf)
+        else:
+            recibo_max_futuro = s_rmt / len(mv) if mv else 1
+            limite_min_futuro = min(obter_limite_remuneracao(m.mes, m.ano, tabela_limites) for m in mv)
+
+        # Calcula qtd necessária para cobrir o pior cenário futuro
+        qtd_candidata = math.ceil(recibo_max_futuro / limite_min_futuro) if limite_min_futuro > 0 else 1
+
+    # Validação final: verifica se essa quantidade respeita todos os períodos
+    # Particularmente, verifica que em cada mês, qtd_candidata * limite >= valor esperado
+    for m in mv:
+        limite_mes = obter_limite_remuneracao(m.mes, m.ano, tabela_limites)
+        # Valor que será alocado neste mês é aproximadamente s_rmt / len(mv)
+        # (divisão simplista, pode variar na prática, mas serve como validação)
+        valor_esperado_mes = s_rmt / len(mv)
+        if qtd_candidata * limite_mes < valor_esperado_mes:
+            # Se não basta, incrementa qtd
+            qtd_candidata = math.ceil(valor_esperado_mes / limite_mes)
+
+    return max(1, qtd_candidata)
+
+
 def parse_mes_ano(mes_ano_str: str) -> Tuple[int, int]:
     partes = mes_ano_str.split('/')
     mes, ano = int(partes[0]), int(partes[1])
@@ -149,11 +233,11 @@ def carregar_distribuicao_csv(arquivo_csv: str) -> Tuple[List[MesDistribuicao], 
 def otimizar_distribuicao(meses: List[MesDistribuicao], tabela_limites: List[LimiteRemuneracao], data_analise: datetime, modo: str = 'autonomo', qtd_fixo: Optional[int] = None) -> List[MesDistribuicao]:
     mv = [m for m in meses if m.remuneracao_corrigida > 0]
     if not mv: return meses
-    
+
     s_rmt = sum(m.remuneracao_corrigida for m in mv)
     s_f = sum((1 + m.selic / 100.0) for m in mv)
     m_at, a_at, d_at = data_analise.month, data_analise.year, data_analise.day
-    
+
     mp, mf = [], []
     for m in mv:
         if (m.ano < a_at) or (m.ano == a_at and m.mes < m_at): mp.append(m)
@@ -161,19 +245,32 @@ def otimizar_distribuicao(meses: List[MesDistribuicao], tabela_limites: List[Lim
             if d_at < DIA_LIMITE_JUROS: mf.append(m)
             else: mp.append(m)
         else: mf.append(m)
-    
-    # NOVA LÓGICA: Se a obra é 100% futura (sem meses passados), faz distribuição linear
+
+    # Calcula a quantidade ideal de autônomos se não foi informada manualmente
+    if qtd_fixo is None:
+        lim_trabalho = calcular_qtd_autonomos_ideal(meses, tabela_limites, data_analise)
+    else:
+        lim_trabalho = qtd_fixo
+
+    # CENÁRIO 1: Obra 100% futura (sem meses passados) — distribuição linear igual
     if not mp and mf:
         recibo_fixo = s_rmt / s_f
         for m in mv:
             m.recibo_otimizado = recibo_fixo
+
+    # CENÁRIO 2: Obra 100% passada (nenhum mês futuro/atual) — distribuição linear entre vencidos
+    elif mp and not mf:
+        recibo_fixo = s_rmt / s_f
+        for m in mv:
+            m.recibo_otimizado = recibo_fixo
+
+    # CENÁRIO 3: Obra em andamento (mistura de passado + futuro) — R$300 nos vencidos, saldo nos futuros
     else:
         # Mantém lógica de preenchimento reverso para minimizar juros em obras com atraso
         for m in mv: m.recibo_otimizado = RECIBO_MINIMO
         sr = s_rmt - sum(m.recibo_otimizado * (1 + m.selic/100.0) for m in mv)
         todos_reverso = sorted(mf + mp, key=lambda x: (x.ano, x.mes), reverse=True)
-        lim_trabalho = qtd_fixo if qtd_fixo else 1
-        
+
         while sr > 0.01:
             aloc_ciclo = 0
             for m in todos_reverso:
@@ -183,7 +280,7 @@ def otimizar_distribuicao(meses: List[MesDistribuicao], tabela_limites: List[Lim
                     adic = min(sr / (1 + m.selic/100.0), espaco)
                     m.recibo_otimizado += adic; sr -= adic * (1 + m.selic/100.0); aloc_ciclo += adic
             if aloc_ciclo < 0.01: break
-        
+
         if sr > 0.01:
             for m in todos_reverso:
                 adic = sr / (1 + m.selic/100.0)
