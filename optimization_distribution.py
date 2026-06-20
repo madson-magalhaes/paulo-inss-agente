@@ -141,42 +141,32 @@ def calcular_qtd_autonomos_ideal(meses: List[MesDistribuicao], tabela_limites: L
         meses_ref = mp
         recibo_fixo = s_rmt / s_f
 
-    # Calcula a quantidade de autônomos necessária baseado na maior exigência encontrada
-    # Começa com 1 e incrementa até cobrir todos os cenários
-    qtd_candidata = 1
+    # Calcula a quantidade de autônomos necessária iterativamente
+    # Testa cada qtd até encontrar uma que respeite todos os períodos
+    valor_medio_mes = s_rmt / len(mv) if mv else 1.0
+
     for qtd_teste in range(1, 100):  # teto de 100 autônomos (caso patológico)
         suficiente = True
+        # Verifica se essa qtd funciona em TODOS os meses
         for m in mv:
             limite_mes = obter_limite_remuneracao(m.mes, m.ano, tabela_limites)
-            # Valor necessário neste mês é a parte que cabe proporcionalmente
-            # (simplificação: verifica se com qtd_teste autônomos o limite é respeitado)
-            # Condição: qtd_teste * limite_mes >= valor_maximo_esperado_no_mes
-            # Como a distribuição não é uniforme, usamos como heurística:
-            # qtd_teste autônomos precisam caber no período de menor limite
-            pass
+            capacidade_mes = qtd_teste * limite_mes
+            # Como a distribuição reversa tende a concentrar valor nos meses futuros,
+            # usamos como heurística: a capacidade deve ser >= valor médio mensal
+            # (na prática a distribuição será menor nos vencidos, maior nos futuros)
+            if capacidade_mes < valor_medio_mes:
+                suficiente = False
+                break
 
-        # Heurística mais robusta: testa se o máximo recibo que precisamos
-        # em qualquer período futuro (onde concentra valor) cabe nos limites
-        if mf:
-            recibo_max_futuro = max(m.recibo_original for m in mf)  # referência: original
-            limite_min_futuro = min(obter_limite_remuneracao(m.mes, m.ano, tabela_limites) for m in mf)
-        else:
-            recibo_max_futuro = s_rmt / len(mv) if mv else 1
-            limite_min_futuro = min(obter_limite_remuneracao(m.mes, m.ano, tabela_limites) for m in mv)
+        if suficiente:
+            return qtd_teste
 
-        # Calcula qtd necessária para cobrir o pior cenário futuro
-        qtd_candidata = math.ceil(recibo_max_futuro / limite_min_futuro) if limite_min_futuro > 0 else 1
-
-    # Validação final: verifica se essa quantidade respeita todos os períodos
-    # Particularmente, verifica que em cada mês, qtd_candidata * limite >= valor esperado
+    # Fallback: se nenhuma qtd funcionar, calcula com base no pior cenário
+    qtd_candidata = 1
     for m in mv:
         limite_mes = obter_limite_remuneracao(m.mes, m.ano, tabela_limites)
-        # Valor que será alocado neste mês é aproximadamente s_rmt / len(mv)
-        # (divisão simplista, pode variar na prática, mas serve como validação)
-        valor_esperado_mes = s_rmt / len(mv)
-        if qtd_candidata * limite_mes < valor_esperado_mes:
-            # Se não basta, incrementa qtd
-            qtd_candidata = math.ceil(valor_esperado_mes / limite_mes)
+        qtd_necessaria = math.ceil(valor_medio_mes / limite_mes)
+        qtd_candidata = max(qtd_candidata, qtd_necessaria)
 
     return max(1, qtd_candidata)
 
