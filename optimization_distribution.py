@@ -99,76 +99,35 @@ def obter_limite_remuneracao(mes: int, ano: int, tabela_limites: List[LimiteRemu
 
 def calcular_qtd_autonomos_ideal(meses: List[MesDistribuicao], tabela_limites: List[LimiteRemuneracao], data_analise: datetime) -> int:
     """
-    Calcula a quantidade mínima de autônomos necessários para cobrir o RMT da obra.
+    Calcula a quantidade fixa de autônomos para a obra usando a metodologia de média ponderada.
 
-    Estratégia:
-    1. Identifica os meses "futuros/atual" (não vencidos) onde o valor tende a ser concentrado.
-    2. Calcula quanto cada autônomo teria que receber em média naqueles meses.
-    3. Valida contra o limite de remuneração de cada período, aumentando a qtd se necessário.
-    4. Retorna um número único, estável para toda a obra.
+    Estratégia (validada pelo Professor):
+    1. Calcula recibo hipotético único: recibo_hip = RMT_total / soma((1+selic/100) de todos os meses).
+    2. Para cada mês, calcula qtd_teste = ceil(recibo_hip / limite_remuneracao_do_período).
+    3. Média ponderada: media = soma(qtd_teste) / total_meses.
+    4. Retorna ceil(media) — sempre arredonda pra cima, nunca reduz capacidade.
     """
     mv = [m for m in meses if m.remuneracao_corrigida > 0]
     if not mv: return 1
 
-    # Particiona em meses passados (mp) e futuros (mf), mesma lógica de otimizar_distribuicao
-    m_at, a_at, d_at = data_analise.month, data_analise.year, data_analise.day
-    mp, mf = [], []
-    for m in mv:
-        if (m.ano < a_at) or (m.ano == a_at and m.mes < m_at):
-            mp.append(m)
-        elif m.ano == a_at and m.mes == m_at:
-            if d_at < DIA_LIMITE_JUROS:
-                mf.append(m)
-            else:
-                mp.append(m)
-        else:
-            mf.append(m)
-
     s_rmt = sum(m.remuneracao_corrigida for m in mv)
     s_f = sum((1 + m.selic / 100.0) for m in mv)
 
-    # Se é 100% futuro, a distribuição será linear — qtd necessária é menor
-    # Calcula a média do recibo futuro (já amortizado pela Selic)
-    if not mp and mf:
-        recibo_fixo = s_rmt / s_f
-        meses_ref = mf
-    # Se há meses futuros, usa-os como referência de onde o recibo será maior
-    elif mf:
-        meses_ref = mf
-        recibo_fixo = s_rmt / s_f
-    # Se é 100% passado, usa todos os meses para calcular o recibo médio
-    else:
-        meses_ref = mp
-        recibo_fixo = s_rmt / s_f
+    # Recibo hipotético único (linear) pra teste
+    recibo_hip = s_rmt / s_f if s_f > 0 else 0
 
-    # Calcula a quantidade de autônomos necessária iterativamente
-    # Testa cada qtd até encontrar uma que respeite todos os períodos
-    valor_medio_mes = s_rmt / len(mv) if mv else 1.0
-
-    for qtd_teste in range(1, 100):  # teto de 100 autônomos (caso patológico)
-        suficiente = True
-        # Verifica se essa qtd funciona em TODOS os meses
-        for m in mv:
-            limite_mes = obter_limite_remuneracao(m.mes, m.ano, tabela_limites)
-            capacidade_mes = qtd_teste * limite_mes
-            # Como a distribuição reversa tende a concentrar valor nos meses futuros,
-            # usamos como heurística: a capacidade deve ser >= valor médio mensal
-            # (na prática a distribuição será menor nos vencidos, maior nos futuros)
-            if capacidade_mes < valor_medio_mes:
-                suficiente = False
-                break
-
-        if suficiente:
-            return qtd_teste
-
-    # Fallback: se nenhuma qtd funcionar, calcula com base no pior cenário
-    qtd_candidata = 1
+    # Calcula quantidade por mês nesse cenário hipotético
+    qtds_teste = []
     for m in mv:
         limite_mes = obter_limite_remuneracao(m.mes, m.ano, tabela_limites)
-        qtd_necessaria = math.ceil(valor_medio_mes / limite_mes)
-        qtd_candidata = max(qtd_candidata, qtd_necessaria)
+        qtd_mes = math.ceil(recibo_hip / limite_mes) if limite_mes > 0 else 1
+        qtds_teste.append(qtd_mes)
 
-    return max(1, qtd_candidata)
+    # Média ponderada pela contagem de meses
+    media = sum(qtds_teste) / len(qtds_teste) if qtds_teste else 1.0
+
+    # Arredonda pra cima (ceil) — nunca reduz capacidade
+    return max(1, math.ceil(media))
 
 
 def parse_mes_ano(mes_ano_str: str) -> Tuple[int, int]:
@@ -254,27 +213,29 @@ def otimizar_distribuicao(meses: List[MesDistribuicao], tabela_limites: List[Lim
         for m in mv:
             m.recibo_otimizado = recibo_fixo
 
-    # CENÁRIO 3: Obra em andamento (mistura de passado + futuro) — R$300 nos vencidos, saldo nos futuros
+    # CENÁRIO 3: Obra em andamento (mistura de passado + futuro)
+    # Recibo fixo nos futuros = qtd_fixa × limite_vigente; nos passados, resíduo de RMT distribuído uniformemente
     else:
-        # Mantém lógica de preenchimento reverso para minimizar juros em obras com atraso
-        for m in mv: m.recibo_otimizado = RECIBO_MINIMO
-        sr = s_rmt - sum(m.recibo_otimizado * (1 + m.selic/100.0) for m in mv)
-        todos_reverso = sorted(mf + mp, key=lambda x: (x.ano, x.mes), reverse=True)
+        # Atribui recibo aos meses futuros: recibo_futuro = lim_trabalho × limite_vigente
+        for m in mf:
+            limite_futuro = obter_limite_remuneracao(m.mes, m.ano, tabela_limites)
+            m.recibo_otimizado = lim_trabalho * limite_futuro
 
-        while sr > 0.01:
-            aloc_ciclo = 0
-            for m in todos_reverso:
-                if sr <= 0: break
-                espaco = (lim_trabalho * obter_limite_remuneracao(m.mes, m.ano, tabela_limites)) - m.recibo_otimizado
-                if espaco > 0:
-                    adic = min(sr / (1 + m.selic/100.0), espaco)
-                    m.recibo_otimizado += adic; sr -= adic * (1 + m.selic/100.0); aloc_ciclo += adic
-            if aloc_ciclo < 0.01: break
+        # Calcula quanto de RMT foi alocado aos futuros
+        soma_rmt_futuros = sum(m.recibo_otimizado * (1 + m.selic / 100.0) for m in mf)
 
-        if sr > 0.01:
-            for m in todos_reverso:
-                adic = sr / (1 + m.selic/100.0)
-                m.recibo_otimizado += adic; sr = 0; break
+        # Calcula recibo único para meses passados (engenharia reversa)
+        if mp and soma_rmt_futuros < s_rmt:
+            soma_fator_passado = sum((1 + m.selic / 100.0) for m in mp)
+            if soma_fator_passado > 0:
+                recibo_passado = (s_rmt - soma_rmt_futuros) / soma_fator_passado
+                recibo_passado = max(RECIBO_MINIMO, recibo_passado)
+                for m in mp:
+                    m.recibo_otimizado = recibo_passado
+        elif mp:
+            # Fallback: se RMT dos futuros já exceder total (edge case raro), usar mínimo
+            for m in mp:
+                m.recibo_otimizado = RECIBO_MINIMO
             
     for m in mv:
         m.remuneracao_corrigida_otimizada = round(m.recibo_otimizado * (1 + m.selic/100.0), 2)
