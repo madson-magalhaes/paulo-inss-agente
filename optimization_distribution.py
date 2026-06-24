@@ -97,6 +97,11 @@ def obter_limite_remuneracao(mes: int, ano: int, tabela_limites: List[LimiteRemu
     return limite_aplicavel.valor_maximo
 
 
+def arredondar_multiplo_5(valor: float) -> float:
+	"""Arredonda para o múltiplo de 5 mais próximo"""
+	return round(valor / 5.0) * 5.0
+
+
 def calcular_qtd_autonomos_ideal(meses: List[MesDistribuicao], tabela_limites: List[LimiteRemuneracao], data_analise: datetime) -> int:
     """
     Calcula a quantidade fixa de autônomos para a obra usando o máximo necessário em qualquer período.
@@ -174,6 +179,156 @@ def carregar_distribuicao_csv(arquivo_csv: str) -> Tuple[List[MesDistribuicao], 
             prazo=row.get('Prazo', 'Não').strip(), creditos=row.get('Créditos', 'Lançar').strip()
         ))
     return meses, {}
+
+
+def agrupar_blocos_contiguos(meses: List[MesDistribuicao], tabela_limites: List[LimiteRemuneracao], data_analise: datetime) -> None:
+	"""
+	Agrupa meses contíguos com mesmo prazo (passado/futuro) e calcula média de recibos.
+	Força todos os meses do bloco a usar o mesmo recibo (arredondado para múltiplo de 5).
+
+	Mantém a regra do dia 20 do mês seguinte para classificação passado/futuro.
+	"""
+	mv = [m for m in meses if m.remuneracao_corrigida > 0]
+	if not mv:
+		return
+
+	# Classifica cada mês como passado ou futuro pela regra do dia 20
+	for m in mv:
+		mes_venc = m.mes + 1
+		ano_venc = m.ano
+		if mes_venc > 12:
+			mes_venc = 1
+			ano_venc += 1
+		data_vencimento = datetime(ano_venc, mes_venc, 20)
+		m._eh_passado = data_analise >= data_vencimento
+
+	# Agrupa meses contíguos com mesmo status (passado/futuro)
+	i = 0
+	while i < len(mv):
+		j = i
+		status_atual = mv[i]._eh_passado
+
+		# Encontra fim do bloco contíguo com mesmo status
+		while j + 1 < len(mv) and mv[j + 1]._eh_passado == status_atual:
+			j += 1
+
+		bloco = mv[i:j + 1]
+
+		# Calcula média de recibos do bloco
+		media_recibos = sum(m.recibo_otimizado for m in bloco) / len(bloco)
+		recibo_bloco = arredondar_multiplo_5(media_recibos)
+
+		# Força todos os meses do bloco a usar o mesmo recibo
+		for m in bloco:
+			m.recibo_otimizado = recibo_bloco
+
+		i = j + 1
+
+
+def ajustar_para_alvo_rmt(meses: List[MesDistribuicao], rmt_alvo: float, tabela_limites: List[LimiteRemuneracao], data_analise: datetime) -> float:
+	"""
+	Ajusta o recibo do último bloco de meses futuros para que a soma corrigida pela SELIC
+	alcance ou ultrapasse o RMT alvo.
+
+	Retorna a soma final corrigida.
+	Mantém a regra do dia 20 intacta.
+	"""
+	soma_atual = sum(m.recibo_otimizado * (1 + m.selic / 100.0) for m in meses if m.remuneracao_corrigida > 0)
+
+	if soma_atual >= rmt_alvo:
+		return soma_atual
+
+	# Encontra meses futuros (para ajuste)
+	meses_futuros = []
+	for m in meses:
+		if m.remuneracao_corrigida > 0:
+			mes_venc = m.mes + 1
+			ano_venc = m.ano
+			if mes_venc > 12:
+				mes_venc = 1
+				ano_venc += 1
+			data_vencimento = datetime(ano_venc, mes_venc, 20)
+			if data_analise < data_vencimento:
+				meses_futuros.append(m)
+
+	if not meses_futuros:
+		return soma_atual
+
+	# Encontra o último bloco contíguo (mesmo recibo)
+	ultimo_recibo = meses_futuros[-1].recibo_otimizado
+	bloco_ultimo = [m for m in meses_futuros if m.recibo_otimizado == ultimo_recibo]
+
+	# Calcula quanto é necessário aumentar
+	falta = rmt_alvo - soma_atual
+
+	if falta <= 0:
+		return soma_atual
+
+	# Distribui o aumento entre os meses do bloco
+	fator_medio = sum((1 + m.selic / 100.0) for m in bloco_ultimo) / len(bloco_ultimo)
+	aumento_por_mes = falta / len(bloco_ultimo) / fator_medio
+	novo_recibo = bloco_ultimo[0].recibo_otimizado + arredondar_multiplo_5(aumento_por_mes)
+
+	# Verifica se vai ultrapassar teto de autônomos
+	teto_valido = True
+	for m in bloco_ultimo:
+		limite = obter_limite_remuneracao(m.mes, m.ano, tabela_limites)
+		qtd_teste = math.ceil(novo_recibo / limite) if limite > 0 else 1
+		if qtd_teste > math.ceil(m.recibo_otimizado / limite):
+			# Precisaria de mais autônomos — ajusta para máximo permitido
+			novo_recibo = min(novo_recibo, qtd_teste * limite)
+			teto_valido = False
+
+	for m in bloco_ultimo:
+		m.recibo_otimizado = novo_recibo
+
+	soma_nova = sum(m.recibo_otimizado * (1 + m.selic / 100.0) for m in meses if m.remuneracao_corrigida > 0)
+	return soma_nova
+
+
+def otimizar_distribuicao_com_loop(meses: List[MesDistribuicao], tabela_limites: List[LimiteRemuneracao], data_analise: datetime, modo: str = 'autonomo', qtd_fixo: Optional[int] = None, rmt_alvo: Optional[float] = None, max_iteracoes: int = 3) -> List[MesDistribuicao]:
+	"""
+	Otimiza a distribuição com loop iterativo (2-3 vezes) como especificado pelo professor.
+
+	Pipeline:
+	1. Fase 1-3: Alocação reversa (futuros no teto, passados no resíduo)
+	2. Loop iterativo (até max_iteracoes):
+	   a. Fase 4: Agrupa blocos contíguos com mesmo status
+	   b. Fase 5: Ajusta último bloco para atingir RMT alvo
+	3. Valida resultado
+
+	Mantém a regra do dia 20 para classificação de vencimento em todas as fases.
+	"""
+	# Fase 1-3: Alocação reversa (código existente)
+	meses = otimizar_distribuicao(meses, tabela_limites, data_analise, modo, qtd_fixo)
+
+	# Se RMT alvo não foi informado, calcula como soma atual
+	if rmt_alvo is None:
+		rmt_alvo = sum(m.remuneracao_corrigida for m in meses if m.remuneracao_corrigida > 0)
+
+	# Loop iterativo (Fases 4-5)
+	soma_anterior = -1.0
+	for iteracao in range(max_iteracoes):
+		soma_atual = sum(m.recibo_otimizado * (1 + m.selic / 100.0) for m in meses if m.remuneracao_corrigida > 0)
+
+		# Verifica convergência
+		if abs(soma_atual - soma_anterior) < 0.01:
+			break
+
+		soma_anterior = soma_atual
+
+		# Fase 4: Agrupamento
+		agrupar_blocos_contiguos(meses, tabela_limites, data_analise)
+
+		# Fase 5: Ajuste para alvo
+		ajustar_para_alvo_rmt(meses, rmt_alvo, tabela_limites, data_analise)
+
+	# Arredonda todos os recibos para múltiplo de 5
+	for m in meses:
+		if m.recibo_otimizado > 0:
+			m.recibo_otimizado = arredondar_multiplo_5(m.recibo_otimizado)
+
+	return meses
 
 
 def otimizar_distribuicao(meses: List[MesDistribuicao], tabela_limites: List[LimiteRemuneracao], data_analise: datetime, modo: str = 'autonomo', qtd_fixo: Optional[int] = None) -> List[MesDistribuicao]:
@@ -261,7 +416,8 @@ def otimizar_distribuicao(meses: List[MesDistribuicao], tabela_limites: List[Lim
 
 
 def otimizar_com_autonomos_fixos(meses: List[MesDistribuicao], tabela_limites: List[LimiteRemuneracao], data_analise: datetime, qtd_fixo: int) -> List[MesDistribuicao]:
-    return otimizar_distribuicao(meses, tabela_limites, data_analise, qtd_fixo=qtd_fixo)
+	rmt_alvo = sum(m.remuneracao_corrigida for m in meses if m.remuneracao_corrigida > 0)
+	return otimizar_distribuicao_com_loop(meses, tabela_limites, data_analise, qtd_fixo=qtd_fixo, rmt_alvo=rmt_alvo, max_iteracoes=3)
 
 
 def coletar_avisos_otimizacao(meses: List[MesDistribuicao], rmt_exp: float, qtd_solicitada: Optional[int] = None) -> List[str]:
@@ -426,7 +582,9 @@ def main():
     arquivo_entrada, modo = sys.argv[1], (sys.argv[2] if len(sys.argv) > 2 else 'autonomo')
     tabela_limites = carregar_tabela_remuneracao()
     meses, _ = carregar_distribuicao_csv(arquivo_entrada)
-    meses_otimizados = otimizar_distribuicao(meses, tabela_limites, datetime.now(), modo)
+    # Usa nova função com loop iterativo (Fases 4-5 do Professor)
+    rmt_alvo = sum(m.remuneracao_corrigida for m in meses if m.remuneracao_corrigida > 0)
+    meses_otimizados = otimizar_distribuicao_com_loop(meses, tabela_limites, datetime.now(), modo, rmt_alvo=rmt_alvo, max_iteracoes=3)
     inss_orig = 0.0
     rmt_exp = 0.0
     with open(arquivo_entrada, 'r', encoding='utf-8-sig') as f:
