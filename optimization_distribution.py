@@ -99,13 +99,13 @@ def obter_limite_remuneracao(mes: int, ano: int, tabela_limites: List[LimiteRemu
 
 def calcular_qtd_autonomos_ideal(meses: List[MesDistribuicao], tabela_limites: List[LimiteRemuneracao], data_analise: datetime) -> int:
     """
-    Calcula a quantidade fixa de autônomos para a obra usando a metodologia de média ponderada.
+    Calcula a quantidade fixa de autônomos para a obra usando o máximo necessário em qualquer período.
 
-    Estratégia (validada pelo Professor):
+    Estratégia (validada pelo Professor, otimizada):
     1. Calcula recibo hipotético único: recibo_hip = RMT_total / soma((1+selic/100) de todos os meses).
     2. Para cada mês, calcula qtd_teste = ceil(recibo_hip / limite_remuneracao_do_período).
-    3. Média ponderada: media = soma(qtd_teste) / total_meses.
-    4. Retorna ceil(media) — sempre arredonda pra cima, nunca reduz capacidade.
+    3. Retorna max(qtds) — usa a quantidade máxima necessária em qualquer período.
+       Justificativa: se precisa de N autônomos em algum mês, usa N em toda a obra para maximizar economia.
     """
     mv = [m for m in meses if m.remuneracao_corrigida > 0]
     if not mv: return 1
@@ -123,11 +123,8 @@ def calcular_qtd_autonomos_ideal(meses: List[MesDistribuicao], tabela_limites: L
         qtd_mes = math.ceil(recibo_hip / limite_mes) if limite_mes > 0 else 1
         qtds_teste.append(qtd_mes)
 
-    # Média ponderada pela contagem de meses
-    media = sum(qtds_teste) / len(qtds_teste) if qtds_teste else 1.0
-
-    # Arredonda pra cima (ceil) — nunca reduz capacidade
-    return max(1, math.ceil(media))
+    # Usa o máximo necessário em qualquer período — nunca reduz capacidade
+    return max(1, max(qtds_teste) if qtds_teste else 1)
 
 
 def parse_mes_ano(mes_ano_str: str) -> Tuple[int, int]:
@@ -185,15 +182,24 @@ def otimizar_distribuicao(meses: List[MesDistribuicao], tabela_limites: List[Lim
 
     s_rmt = sum(m.remuneracao_corrigida for m in mv)
     s_f = sum((1 + m.selic / 100.0) for m in mv)
+    # Partição passado/futuro: um mês é vencido se a data de vencimento (dia 20 do mês seguinte) passou
     m_at, a_at, d_at = data_analise.month, data_analise.year, data_analise.day
 
     mp, mf = [], []
     for m in mv:
-        if (m.ano < a_at) or (m.ano == a_at and m.mes < m_at): mp.append(m)
-        elif m.ano == a_at and m.mes == m_at:
-            if d_at < DIA_LIMITE_JUROS: mf.append(m)
-            else: mp.append(m)
-        else: mf.append(m)
+        # Data de vencimento do mês: dia 20 do mês seguinte
+        mes_venc = m.mes + 1
+        ano_venc = m.ano
+        if mes_venc > 12:
+            mes_venc = 1
+            ano_venc += 1
+        data_vencimento = datetime(ano_venc, mes_venc, 20)
+
+        # Mês é passado se a data de vencimento já passou
+        if data_analise >= data_vencimento:
+            mp.append(m)
+        else:
+            mf.append(m)
 
     # Calcula a quantidade ideal de autônomos se não foi informada manualmente
     if qtd_fixo is None:
@@ -399,7 +405,7 @@ def exportar_csv_otimizado(meses: List[MesDistribuicao], arquivo_saida: str, mod
                     elif 'NOTA:' in row[0] and 'VAU' in row[0]: writer.writerow(row)
                     elif 'ECONOMIA REAL GERADA' in row[0]: writer.writerow(['ECONOMIA REAL GERADA', '', '', '', f'{economia:.2f}'])
                     elif 'PERCENTUAL ECONOMIA' in row[0]: writer.writerow(['PERCENTUAL ECONOMIA', '', '', '', f'{(economia/inss_puro*100):.2f}%' if inss_puro > 0 else '0.00%'])
-                    elif 'Honorários Estimados' in row[0]: writer.writerow([f'Honorários Estimados ({perc_honorario:.0f}%)', f'{honorarios:.2f}'])
+                    elif 'Honorários Estimados' in row[0]: writer.writerow(['Honorários Estimados', f'{honorarios:.2f}'])
                     else: writer.writerow(row)
                 writer.writerow([])
         if avisos:
