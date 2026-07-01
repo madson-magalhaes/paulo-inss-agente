@@ -181,7 +181,7 @@ def inserir_dados_paulo_inss(numero_orcamento):
         honorarios_valor = melhor_dados['honorarios'] or 0.0
         honorarios_valor = max(honorarios_valor, 1500.0)
         inss_com_honorarios = melhor_dados['inss_cenario_3'] + honorarios_valor
-        percentual_inss_com_honorarios = ((inss_sem_reducao - inss_com_honorarios) / inss_sem_reducao * 100) if inss_sem_reducao > 0 else 0
+        percentual_com_honorarios = ((inss_sem_reducao - inss_com_honorarios) / inss_sem_reducao * 100) if inss_sem_reducao > 0 else 0
 
         dados_inss = {
             'nome': nome_cliente,
@@ -192,7 +192,7 @@ def inserir_dados_paulo_inss(numero_orcamento):
             'percentual_economia': percentual_economia,
             'honorarios': melhor_dados['honorarios'] or 0.0,
             'inss_com_honorarios': inss_com_honorarios,
-            'percentual_inss_com_honorarios': percentual_inss_com_honorarios,
+            'percentual_com_honorarios': percentual_com_honorarios,
         }
 
         print(f"   Nome: {nome_cliente}")
@@ -201,7 +201,7 @@ def inserir_dados_paulo_inss(numero_orcamento):
         print(f"   Honorários: R$ {honorarios_valor:.2f}")
         print(f"   INSS com honorários: R$ {inss_com_honorarios:.2f}")
         print(f"   Economia: {percentual_economia:.2f}%")
-        print(f"   % com Honorários: {percentual_inss_com_honorarios:.2f}%")
+        print(f"   % com Honorários: {percentual_com_honorarios:.2f}%")
 
         response = client.table('paulo_inss').insert(dados_inss).execute()
 
