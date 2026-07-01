@@ -98,8 +98,8 @@ def obter_limite_remuneracao(mes: int, ano: int, tabela_limites: List[LimiteRemu
 
 
 def arredondar_multiplo_5(valor: float) -> float:
-	"""Arredonda para o múltiplo de 5 mais próximo"""
-	return round(valor / 5.0) * 5.0
+	"""Arredonda para cima, para o próximo múltiplo de 5"""
+	return math.ceil(valor / 5.0) * 5.0
 
 
 def calcular_qtd_autonomos_ideal(meses: List[MesDistribuicao], tabela_limites: List[LimiteRemuneracao], data_analise: datetime) -> int:
@@ -576,15 +576,199 @@ def exportar_csv_otimizado(meses: List[MesDistribuicao], arquivo_saida: str, mod
         writer.writerow(['Total', f"{sum(m.remuneracao_corrigida_otimizada for m in meses):.2f}", '', f"{sum(m.recibo_original for m in meses):.2f}", f"{sum(m.recibo_otimizado for m in meses):.2f}", f"Máx: {max_a}" if max_a > 0 else '', f"Máx: {max_m}" if max_m > 0 else '', f"{sum(m.inss_otimizado for m in meses):.2f}", f"{sum(m.multa_otimizada for m in meses):.2f}", f"{sum(m.juros_otimizado for m in meses):.2f}", f"{sum(m.maed_otimizado for m in meses):.2f}", f"{sum(m.total_otimizado for m in meses):.2f}"])
 
 
+def otimizar_distribuicao_nova_abordagem(meses: List[MesDistribuicao], tabela_limites: List[LimiteRemuneracao], data_analise: datetime) -> List[MesDistribuicao]:
+	"""
+	Implementação literal do algoritmo de preenchimento do fim para o início.
+
+	1. Preenche meses futuros com N_futuros × limite_do_período (teto máximo).
+	2. Distribui o saldo de RMT restante nos meses passados, uniformemente.
+	3. Se algum passado ficar < R$ 300: fixa nele R$ 300 e redistribui o saldo nos futuros. Fim.
+	4. Senão, se N(passados) <= N(futuros) e ordem não-decrescente: otimizado. Fim.
+	   Senão: sobe o mês passado imediatamente anterior ao bloco futuro para
+	   N(futuros) × limite do período, e repete 2-4.
+	5. Se esgotar os meses passados sem convergir, incrementa N(futuros) em +1
+	   e recomeça do passo 1 (loop 1A, 1B, 1C...).
+	"""
+	mv = [m for m in meses if m.remuneracao_corrigida > 0]
+	if not mv:
+		return meses
+
+	rmt_alvo = sum(m.remuneracao_corrigida for m in mv)
+
+	# Partição passado/futuro (ordem cronológica preservada)
+	mp, mf = [], []
+	for m in mv:
+		mes_venc = m.mes + 1
+		ano_venc = m.ano
+		if mes_venc > 12:
+			mes_venc = 1
+			ano_venc += 1
+		data_vencimento = datetime(ano_venc, mes_venc, 20)
+
+		if data_analise >= data_vencimento:
+			mp.append(m)
+		else:
+			mf.append(m)
+
+	# Caso especial: obra 100% passada (sem meses futuros) — distribuição linear única
+	if not mf:
+		recibo_unico = rmt_alvo / sum((1 + m.selic / 100.0) for m in mp)
+		recibo_unico = max(RECIBO_MINIMO, arredondar_multiplo_5(recibo_unico))
+		for m in mp:
+			m.recibo_otimizado = recibo_unico
+			limite = obter_limite_remuneracao(m.mes, m.ano, tabela_limites)
+			m.qtd_autonomos = math.ceil(m.recibo_otimizado / limite) if limite > 0 else 1
+	else:
+		# N inicial dos meses futuros = quantidade "não otimizada" (o que já estava
+		# no recibo original desses meses, base de partida do professor)
+		limite_futuro_base = obter_limite_remuneracao(mf[0].mes, mf[0].ano, tabela_limites)
+		n_futuros_inicial = max(1, math.ceil(mf[0].recibo_original / limite_futuro_base)) if limite_futuro_base > 0 else 1
+
+		max_incrementos = 30
+		otimizado = False
+
+		for incremento in range(max_incrementos):
+			n_futuros = n_futuros_inicial + incremento
+
+			# PASSO 1: Preenche todos os futuros no teto (N_futuros x limite do período)
+			for m in mf:
+				limite = obter_limite_remuneracao(m.mes, m.ano, tabela_limites)
+				m.recibo_otimizado = arredondar_multiplo_5(n_futuros * limite)
+
+			# idx_puxados: meses passados já "puxados" para o teto N_futuros x limite
+			# (viram parte do bloco de trás, do mais recente para o mais antigo).
+			# Os meses restantes (ainda não puxados) recebem a distribuição uniforme do saldo.
+			qtd_puxados = 0
+			convergiu_neste_n = False
+
+			# Tenta puxar 0, 1, 2, ... meses passados (do fim para o início) até convergir
+			# ou esgotar todos os meses passados (chegar no primeiro mês da obra).
+			for qtd_puxados in range(0, len(mp) + 1):
+				# Meses puxados: os últimos `qtd_puxados` meses do bloco passado (mais recentes)
+				idx_puxados = list(range(len(mp) - qtd_puxados, len(mp)))
+				idx_livres = list(range(0, len(mp) - qtd_puxados))
+
+				for i in idx_puxados:
+					limite_i = obter_limite_remuneracao(mp[i].mes, mp[i].ano, tabela_limites)
+					mp[i].recibo_otimizado = arredondar_multiplo_5(n_futuros * limite_i)
+
+				soma_rmt_futuros = sum(m.recibo_otimizado * (1 + m.selic / 100.0) for m in mf)
+				soma_rmt_puxados = sum(mp[i].recibo_otimizado * (1 + mp[i].selic / 100.0) for i in idx_puxados)
+				rmt_saldo = rmt_alvo - soma_rmt_futuros - soma_rmt_puxados
+
+				# PASSO 2: distribui o saldo uniformemente entre os passados ainda livres
+				if idx_livres:
+					soma_fatores_livres = sum((1 + mp[i].selic / 100.0) for i in idx_livres)
+					recibo_livre = rmt_saldo / soma_fatores_livres if soma_fatores_livres > 0 else 0
+					recibo_livre_arred = arredondar_multiplo_5(max(recibo_livre, 0.0))
+					for i in idx_livres:
+						mp[i].recibo_otimizado = recibo_livre_arred
+
+				# PASSO 3: os meses livres restantes ficaram >= R$ 300?
+				todos_livres_acima_minimo = all(mp[i].recibo_otimizado >= RECIBO_MINIMO - 0.01 for i in idx_livres)
+
+				if not idx_livres:
+					# Esgotou todos os meses passados (chegou no primeiro mês da obra):
+					# não há mais o que puxar. Verifica se convergiu com tudo no teto.
+					for m in mv:
+						limite = obter_limite_remuneracao(m.mes, m.ano, tabela_limites)
+						m.qtd_autonomos = math.ceil(m.recibo_otimizado / limite) if limite > 0 else 1
+					if validar_nao_decrescente(mv):
+						convergiu_neste_n = True
+					break
+
+				if not todos_livres_acima_minimo:
+					# PASSO 3: fixa os meses livres em R$ 300 e redistribui o saldo nos futuros -> finalizado
+					for i in idx_livres:
+						mp[i].recibo_otimizado = RECIBO_MINIMO
+					soma_rmt_passados = sum(m.recibo_otimizado * (1 + m.selic / 100.0) for m in mp)
+					rmt_saldo_futuros = rmt_alvo - soma_rmt_passados
+					soma_fatores_futuros = sum((1 + m.selic / 100.0) for m in mf)
+					if soma_fatores_futuros > 0:
+						recibo_futuro_novo = rmt_saldo_futuros / soma_fatores_futuros
+						recibo_futuro_novo = arredondar_multiplo_5(max(recibo_futuro_novo, RECIBO_MINIMO))
+						for m in mf:
+							m.recibo_otimizado = recibo_futuro_novo
+
+					for m in mv:
+						limite = obter_limite_remuneracao(m.mes, m.ano, tabela_limites)
+						m.qtd_autonomos = math.ceil(m.recibo_otimizado / limite) if limite > 0 else 1
+					convergiu_neste_n = validar_nao_decrescente(mv)
+					break
+
+				# PASSO 4: valida N(passados livres) <= N(futuros)?
+				for m in mv:
+					limite = obter_limite_remuneracao(m.mes, m.ano, tabela_limites)
+					m.qtd_autonomos = math.ceil(m.recibo_otimizado / limite) if limite > 0 else 1
+
+				n_max_futuros = max(m.qtd_autonomos for m in mf)
+				n_max_livres = max((mp[i].qtd_autonomos for i in idx_livres), default=0)
+
+				if n_max_livres <= n_max_futuros and validar_nao_decrescente(mv):
+					# Otimizado com este qtd_puxados
+					convergiu_neste_n = True
+					break
+
+				# Senão, puxa mais um mês passado (o próximo mais recente) e repete o ciclo
+
+			if convergiu_neste_n:
+				otimizado = True
+				break
+			# Senão, incrementa N(futuros) e recomeça do passo 1 (1A, 1B, 1C...)
+
+	# Calcula campos derivados
+	for m in mv:
+		m.remuneracao_corrigida_otimizada = round(m.recibo_otimizado * (1 + m.selic / 100.0), 2)
+		cpp = m.recibo_otimizado * ALIQUOTA_CPP
+		m.inss_otimizado = round(cpp, 2)
+
+		mvenc, avenc = m.mes + 1, m.ano
+		if mvenc > 12:
+			mvenc = 1
+			avenc += 1
+
+		dvj = datetime(avenc, mvenc, 15)
+		dvm = datetime(avenc, mvenc, 20)
+
+		if data_analise >= dvm:
+			m.multa_otimizada = round(cpp * 0.2, 2)
+			m.juros_otimizado = round(cpp * m.selic / 100, 2)
+			m.maed_otimizado = VALOR_MAED
+		elif data_analise >= dvj:
+			m.multa_otimizada = round(cpp * 0.2, 2)
+			m.juros_otimizado = round(cpp * m.selic / 100, 2)
+			m.maed_otimizado = 0.0
+		else:
+			m.multa_otimizada = 0.0
+			m.juros_otimizado = 0.0
+			m.maed_otimizado = 0.0
+
+		m.total_otimizado = round(m.inss_otimizado + m.multa_otimizada + m.juros_otimizado + m.maed_otimizado, 2)
+
+	return meses
+
+
+def validar_nao_decrescente(meses: List[MesDistribuicao]) -> bool:
+	"""Valida se N operários é não-decrescente ao longo do tempo"""
+	mv = [m for m in meses if m.remuneracao_corrigida > 0]
+	if len(mv) <= 1:
+		return True
+
+	for i in range(1, len(mv)):
+		if mv[i].qtd_autonomos < mv[i-1].qtd_autonomos:
+			return False
+
+	return True
+
+
 def main():
     import sys
     if len(sys.argv) < 2: return
     arquivo_entrada, modo = sys.argv[1], (sys.argv[2] if len(sys.argv) > 2 else 'autonomo')
     tabela_limites = carregar_tabela_remuneracao()
     meses, _ = carregar_distribuicao_csv(arquivo_entrada)
-    # Usa nova função com loop iterativo (Fases 4-5 do Professor)
-    rmt_alvo = sum(m.remuneracao_corrigida for m in meses if m.remuneracao_corrigida > 0)
-    meses_otimizados = otimizar_distribuicao_com_loop(meses, tabela_limites, datetime.now(), modo, rmt_alvo=rmt_alvo, max_iteracoes=3)
+    # Usa nova abordagem de otimização
+    meses_otimizados = otimizar_distribuicao_nova_abordagem(meses, tabela_limites, datetime.now())
     inss_orig = 0.0
     rmt_exp = 0.0
     with open(arquivo_entrada, 'r', encoding='utf-8-sig') as f:

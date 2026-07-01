@@ -33,7 +33,7 @@ from io_handlers import (
 from optimization_distribution import (
     carregar_tabela_remuneracao,
     carregar_distribuicao_csv,
-    otimizar_distribuicao,
+    otimizar_distribuicao_nova_abordagem,
     exportar_csv_otimizado,
     coletar_avisos_otimizacao
 )
@@ -98,11 +98,10 @@ def main():
             # Otimização automática
             print("\n🔄 Calculando distribuição otimizada...")
             data_analise = datetime.now()
-            meses_otimizados = otimizar_distribuicao(
+            meses_otimizados = otimizar_distribuicao_nova_abordagem(
                 copy.deepcopy(meses),
                 tabela_limites,
-                data_analise,
-                'autonomo'
+                data_analise
             )
 
             # Resumo

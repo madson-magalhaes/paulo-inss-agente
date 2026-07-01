@@ -369,6 +369,7 @@ def exportar_csv_resumo(resultado: ResultadoSimulacao, arquivo_saida: str, diret
         area_total = sum(area.area_equivalente for area in resultado.calculos_areas) if resultado.calculos_areas else 0
         perc_honorario = obter_percentual_honorario(area_total, honorarios)
         valor_honorarios = economia_real * (perc_honorario / 100.0)
+        valor_honorarios = max(valor_honorarios, 1500.0)
         writer.writerow(['Honorários Estimados', formatar_valor_export(valor_honorarios)])
         writer.writerow(['Percentual Honorários', formatar_percentual_export(perc_honorario)])
         writer.writerow([])
