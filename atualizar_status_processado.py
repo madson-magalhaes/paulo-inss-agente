@@ -178,7 +178,6 @@ def inserir_dados_paulo_inss(numero_orcamento):
 
         percentual_economia = ((inss_sem_reducao - melhor_dados['inss_cenario_3']) / inss_sem_reducao) * 100 if inss_sem_reducao > 0 else 0
 
-        # Calcula INSS com honorários (novo)
         honorarios_valor = melhor_dados['honorarios'] or 0.0
         honorarios_valor = max(honorarios_valor, 1500.0)
         inss_com_honorarios = melhor_dados['inss_cenario_3'] + honorarios_valor
