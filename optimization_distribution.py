@@ -9,7 +9,7 @@ import csv
 import os
 import math
 import copy
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
 
@@ -64,6 +64,47 @@ ALIQUOTA_CPP = 0.20
 ALIQUOTA_MULTA = 0.20
 VALOR_MAED = 100.00
 DIA_LIMITE_JUROS = 15
+
+# MAED (Multa por Atraso na Entrega da Declaração)
+MAED_PERCENTUAL_MES = 0.02
+MAED_MINIMO_BRUTO = 200.00
+MAED_TETO_PERCENTUAL = 0.20
+MAED_DESCONTO_ESPONTANEO = 0.50
+MAED_DESCONTO_30_DIAS = 0.50
+MAED_MINIMO_LIQUIDO = 100.00
+
+
+def calcular_maed(contribuicao_mes: float, data_vencimento_declaracao: datetime, data_analise: datetime) -> float:
+	"""
+	Calcula a MAED (Multa por Atraso na Entrega da Declaração) conforme regra simplificada:
+
+	MAED bruta = contribuição do mês (sem multas) x 2% x qtd de meses-calendário/frações de atraso
+	             (mínimo R$ 200, teto 20% da contribuição do mês)
+	MAED a pagar = MAED bruta x 50% (envio espontâneo à Receita Federal) x 50% (pagamento em até
+	               30 dias), mínimo R$ 100
+
+	A contagem de atraso começa no dia seguinte ao prazo de entrega da declaração (dia 01 do mês
+	seguinte ao vencimento), e qualquer fração de mês já conta como mês cheio. O sistema sempre projeta
+	envio espontâneo e regularização imediata (pagamento dentro de 30 dias a partir de hoje), então os
+	dois descontos de 50% (75% de desconto total) são sempre aplicados juntos.
+	"""
+	if data_analise <= data_vencimento_declaracao:
+		return 0.0
+
+	inicio_atraso = data_vencimento_declaracao + timedelta(days=1)
+
+	meses_atraso = (data_analise.year - inicio_atraso.year) * 12 + (data_analise.month - inicio_atraso.month)
+	if data_analise.day >= inicio_atraso.day:
+		meses_atraso += 1
+	if meses_atraso < 1:
+		meses_atraso = 1
+
+	maed_bruta = contribuicao_mes * MAED_PERCENTUAL_MES * meses_atraso
+	maed_bruta = max(MAED_MINIMO_BRUTO, min(maed_bruta, contribuicao_mes * MAED_TETO_PERCENTUAL))
+
+	maed_a_pagar = max(maed_bruta * MAED_DESCONTO_ESPONTANEO * MAED_DESCONTO_30_DIAS, MAED_MINIMO_LIQUIDO)
+
+	return round(maed_a_pagar, 2)
 
 
 def carregar_tabela_remuneracao(arquivo_csv: str = 'tabela-remuneracao.csv') -> List[LimiteRemuneracao]:
@@ -406,7 +447,7 @@ def otimizar_distribuicao(meses: List[MesDistribuicao], tabela_limites: List[Lim
         if mvenc > 12: mvenc = 1; avenc += 1
         dvj, dvm = datetime(avenc, mvenc, 15), datetime(avenc, mvenc, 20)
         if data_analise >= dvm:
-            m.multa_otimizada, m.juros_otimizado, m.maed_otimizado = round(cpp*0.2, 2), round(cpp*m.selic/100, 2), VALOR_MAED
+            m.multa_otimizada, m.juros_otimizado, m.maed_otimizado = round(cpp*0.2, 2), round(cpp*m.selic/100, 2), calcular_maed(cpp, dvm, data_analise)
         elif data_analise >= dvj:
             m.multa_otimizada, m.juros_otimizado, m.maed_otimizado = round(cpp*0.2, 2), round(cpp*m.selic/100, 2), 0.0
         else: m.multa_otimizada = m.juros_otimizado = m.maed_otimizado = 0.0
@@ -733,7 +774,7 @@ def otimizar_distribuicao_nova_abordagem(meses: List[MesDistribuicao], tabela_li
 		if data_analise >= dvm:
 			m.multa_otimizada = round(cpp * 0.2, 2)
 			m.juros_otimizado = round(cpp * m.selic / 100, 2)
-			m.maed_otimizado = VALOR_MAED
+			m.maed_otimizado = calcular_maed(cpp, dvm, data_analise)
 		elif data_analise >= dvj:
 			m.multa_otimizada = round(cpp * 0.2, 2)
 			m.juros_otimizado = round(cpp * m.selic / 100, 2)
