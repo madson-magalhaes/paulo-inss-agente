@@ -97,6 +97,11 @@ def inserir_dados_paulo_inss(numero_orcamento):
         client = create_client(url, key)
         print(f"\n📊 Inserindo dados em paulo_inss...")
 
+        session_id = None
+        orc_response = client.table('paulo_orcamentos').select('session_id').eq('numero_orcamento', numero_orcamento).limit(1).execute()
+        if orc_response.data:
+            session_id = orc_response.data[0].get('session_id')
+
         pasta_orcamentos = Path("orcamentos")
         pattern = str(pasta_orcamentos / f"orcamento_{numero_orcamento}_*")
         pastas = glob.glob(pattern)
@@ -186,6 +191,7 @@ def inserir_dados_paulo_inss(numero_orcamento):
         dados_inss = {
             'nome': nome_cliente,
             'telefone': melhor_dados['telefone'] or '',
+            'session_id': session_id,
             'numero_orcamento': int(numero_orcamento),
             'inss_sem_reducao': inss_sem_reducao,
             'inss_otimizado': melhor_dados['inss_cenario_3'],
@@ -196,6 +202,7 @@ def inserir_dados_paulo_inss(numero_orcamento):
         }
 
         print(f"   Nome: {nome_cliente}")
+        print(f"   session_id: {session_id or '(não encontrado em paulo_orcamentos)'}")
         print(f"   INSS sem redução: R$ {inss_sem_reducao:.2f}")
         print(f"   INSS final: R$ {melhor_dados['inss_cenario_3']:.2f}")
         print(f"   Honorários: R$ {honorarios_valor:.2f}")
