@@ -36,7 +36,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 try:
-    from supabase import create_client
+    from supabase_client import get_client
 except ImportError:
     print("❌ Erro: supabase não está instalado")
     sys.exit(1)
@@ -86,7 +86,7 @@ def contar_linhas_orcamento_por_status(client, numero_orcamento):
     """
     try:
         # Conta abertas
-        response_abertas = client.table('paulo_orcamentos').select(
+        response_abertas = client.table('orcamentos').select(
             'id'
         ).eq('numero_orcamento', numero_orcamento).eq(
             'status_orcamento', 'aberto'
@@ -94,7 +94,7 @@ def contar_linhas_orcamento_por_status(client, numero_orcamento):
         qtd_abertas = len(response_abertas.data) if response_abertas.data else 0
 
         # Conta processadas
-        response_processadas = client.table('paulo_orcamentos').select(
+        response_processadas = client.table('orcamentos').select(
             'id'
         ).eq('numero_orcamento', numero_orcamento).eq(
             'status_orcamento', 'processado'
@@ -126,14 +126,13 @@ def validar_orcamentos_v2(orcamentos_para_processar):
     print(f"Arquivo de controle: {ARQUIVO_CONTROLE}\n")
 
     controle = carregar_controle()
-    url = os.getenv('SUPABASE_URL')
-    key = os.getenv('SUPABASE_KEY')
 
-    if not url or not key:
+    try:
+        client = get_client()
+    except ValueError:
         print("⚠️ Aviso: Supabase não configurado, pulando validação")
         return orcamentos_para_processar, {}
 
-    client = create_client(url, key)
     agora = datetime.now()
     orcamentos_prontos = {}
     orcamentos_incompletos = {}

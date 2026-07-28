@@ -22,26 +22,14 @@ def _buscar_contato_supabase(numero_orcamento: str) -> Tuple[str, str]:
     Retorna (nome, telefone)
     """
     try:
-        from supabase import create_client
-        from dotenv import load_dotenv
-        import os as os_module
+        from supabase_client import get_client
 
-        # Carrega variáveis de ambiente do .env (compatível com Windows, Linux, macOS)
-        from pathlib import Path
-        env_path = Path(__file__).parent / '.env'
-        if env_path.exists():
-            load_dotenv(str(env_path))
-        else:
-            load_dotenv()
-
-        url = os_module.getenv('SUPABASE_URL')
-        key = os_module.getenv('SUPABASE_KEY')
-
-        if not url or not key:
+        try:
+            client = get_client()
+        except ValueError:
             return "", ""
 
-        client = create_client(url, key)
-        response = client.table('paulo_orcamentos').select('nome, telefone').eq('numero_orcamento', numero_orcamento).limit(1).execute()
+        response = client.table('orcamentos').select('nome, telefone').eq('numero_orcamento', numero_orcamento).limit(1).execute()
 
         if response.data and len(response.data) > 0:
             row = response.data[0]
@@ -56,7 +44,7 @@ def _buscar_contato_supabase(numero_orcamento: str) -> Tuple[str, str]:
 
 def atualizar_honorarios_supabase(numero_orcamento: str, valor_honorarios: float) -> bool:
     """
-    Atualiza o valor de honorários na tabela 'paulo-inss' do Supabase.
+    Atualiza o valor de honorários na tabela 'inss' do Supabase.
 
     Args:
         numero_orcamento: Número do orçamento
@@ -66,28 +54,16 @@ def atualizar_honorarios_supabase(numero_orcamento: str, valor_honorarios: float
         True se atualizado com sucesso, False caso contrário
     """
     try:
-        from supabase import create_client
-        from dotenv import load_dotenv
-        import os as os_module
-        from pathlib import Path
+        from supabase_client import get_client
 
-        env_path = Path(__file__).parent / '.env'
-        if env_path.exists():
-            load_dotenv(str(env_path))
-        else:
-            load_dotenv()
-
-        url = os_module.getenv('SUPABASE_URL')
-        key = os_module.getenv('SUPABASE_KEY')
-
-        if not url or not key:
+        try:
+            client = get_client()
+        except ValueError:
             print("⚠️  Aviso: Variáveis SUPABASE_URL ou SUPABASE_KEY não configuradas")
             return False
 
-        client = create_client(url, key)
-
-        # Atualiza a coluna 'honorarios' na tabela 'paulo-inss'
-        response = client.table('paulo-inss').update({
+        # Atualiza a coluna 'honorarios' na tabela 'inss'
+        response = client.table('inss').update({
             'honorarios': valor_honorarios
         }).eq('numero_orcamento', numero_orcamento).execute()
 

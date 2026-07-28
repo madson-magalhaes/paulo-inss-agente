@@ -1,0 +1,66 @@
+[DADOS DO PROJETO]
+Nome do Contato,
+Telefone do Contato,
+Estado,CE
+Data Início,01/06/2025
+Data Fim,01/08/2026
+Status,OBRA EM ANDAMENTO
+Custo Total da Obra,2003406.60
+
+[ANÁLISE TEMPORAL]
+Meses Totais,15
+Meses de Paralisação,0
+RMT Decadente,0.00
+Percentual Decadência,0.00%
+
+[MATRIZ DE COMPARAÇÃO TRIBUTÁRIA]
+Cenário,Estratégia Aplicada,RMT (VAU Atual),RMT (VAU Previsto),INSS Final
+1. Padrão (Pior),Aferição Direta Receita,360613.19,360613.19,132705.65
+2. Intermediário,Decadência,360613.19,360613.19,132705.65
+3. Otimizado (Nosso),Estratégia de Folha (CPP),360613.19,255995.28,60145.68
+NOTA: Cenários 1 e 2 usam VAU (Jul/26). Cenário 3 usa VAU PREVISTO.
+ECONOMIA REAL GERADA,,,,72559.97
+PERCENTUAL ECONOMIA,,,,54.68%
+
+[PARÂMETROS E OPERAÇÃO]
+Honorários Estimados,14511.99
+Percentual Honorários,20.00%
+
+[INFORMAÇÕES PARA RECEITA FEDERAL]
+Item,Valor
+DARFs Atrasadas,50462.40
+DARF do Mês Atual,3227.76
+DARFs Futuras (Média),3227.76
+DARFs Futuras (Total),6455.52
+Quantidade de Meses Futuros,2
+Primeira DARF Futura,08/26
+Última DARF Futura,09/26
+Soma das MAEDs Atrasadas,1200.00
+Multa de Parcelamento (20% das MAEDs),240.00
+Opção 1: Pagamento à Vista,50462.40
+Opção 2: Pagamento Parcelado,50702.40
+Sugestão Parcelas,60x 845.04
+
+DETALHAMENTO POR ÁREA
+Área,Tipo,Categoria,Material,Área m²,Principal,Coberta,Prefabr.,% Equiv.,Área Equiv.,VAU,Custo Estimado,PMO,% Cat.,Fator Social,RMT Base,RMT Otimizado
+Área 1,unifamiliar,obra_nova,alvenaria,795.00,Sim,N/A,Não,89.00%,707.55,2831.47,2003406.60,20.00%,100.00%,90.00%,360613.19,252429.23
+
+DISTRIBUIÇÃO MENSAL
+Mês/Ano,Remuneração Corrigida,ICM %,Paralisado,Observação,Recibo (Base),CPP (20%),Multa (20%),Mora (Selic),MAED,Total INSS
+06/2025,18330.45,13.58%,Não,,16138.80,3227.76,645.55,438.33,100.00,4411.64
+07/2025,18143.24,12.42%,Não,,16138.80,3227.76,645.55,400.89,100.00,4374.20
+08/2025,17946.35,11.20%,Não,,16138.80,3227.76,645.55,361.51,100.00,4334.82
+09/2025,17739.77,9.92%,Não,,16138.80,3227.76,645.55,320.19,100.00,4293.51
+10/2025,17570.31,8.87%,Não,,16138.80,3227.76,645.55,286.30,100.00,4259.61
+11/2025,17373.42,7.65%,Não,,16138.80,3227.76,645.55,246.92,100.00,4220.24
+12/2025,17186.21,6.49%,Não,,16138.80,3227.76,645.55,209.48,100.00,4182.79
+01/2026,17024.82,5.49%,Não,,16138.80,3227.76,645.55,177.20,100.00,4150.52
+02/2026,16829.54,4.28%,Não,,16138.80,3227.76,645.55,138.15,100.00,4111.46
+03/2026,16653.63,3.19%,Não,,16138.80,3227.76,645.55,102.97,100.00,4076.28
+04/2026,16480.94,2.12%,Não,,16138.80,3227.76,645.55,68.43,100.00,4041.74
+05/2026,16300.19,1.00%,Não,,16138.80,3227.76,645.55,32.28,100.00,4005.59
+06/2026,16138.80,0.00%,Não,,16138.80,3227.76,0.00,0.00,0.00,3227.76
+07/2026,16138.80,0.00%,Não,,16138.80,3227.76,0.00,0.00,0.00,3227.76
+08/2026,16138.80,0.00%,Não,,16138.80,3227.76,0.00,0.00,0.00,3227.76
+
+255995.27,,,RMT atingido,,,48416.40,7746.60,2782.65,1200.00,60145.68

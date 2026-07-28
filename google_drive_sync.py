@@ -186,16 +186,14 @@ def sincronizar_google_drive(caminho_pasta, nome_pasta_destino):
 def obter_nome_cliente_supabase(numero_orcamento):
     """Busca nome do cliente no Supabase"""
     try:
-        from supabase import create_client
+        from supabase_client import get_client
 
-        url = os.getenv('SUPABASE_URL')
-        key = os.getenv('SUPABASE_KEY')
-
-        if not url or not key:
+        try:
+            client = get_client()
+        except ValueError:
             return None
 
-        client = create_client(url, key)
-        response = client.table('paulo_orcamentos').select(
+        response = client.table('orcamentos').select(
             'nome'
         ).eq('numero_orcamento', numero_orcamento).limit(1).execute()
 

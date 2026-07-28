@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 try:
-    from supabase import create_client
+    from supabase_client import get_client
     import pandas as pd
 except ImportError as e:
     print(f"❌ Erro: {e}")
@@ -46,7 +46,7 @@ def coletar_orcamentos():
         print("COLETA DE ORÇAMENTOS - SUPABASE")
         print("=" * 80 + "\n")
 
-        tabela = 'paulo_orcamentos'
+        tabela = 'orcamentos'
         col_status = 'status_orcamento'
         prefixo = 'obra'
 
@@ -57,14 +57,11 @@ def coletar_orcamentos():
         ]
 
         print("🔌 Conectando ao Supabase...")
-        url = os.getenv('SUPABASE_URL')
-        key = os.getenv('SUPABASE_KEY')
-
-        if not url or not key:
-            print("❌ SUPABASE_URL ou SUPABASE_KEY não configurado em .env")
+        try:
+            client = get_client()
+        except ValueError as e:
+            print(f"❌ {e}")
             return {}
-
-        client = create_client(url, key)
         print("✓ Conexão bem-sucedida!\n")
 
         print("📥 Detectando orçamentos com items em 'aberto' ou 'processando'...")

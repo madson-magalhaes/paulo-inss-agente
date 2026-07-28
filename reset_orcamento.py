@@ -6,14 +6,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 try:
-    from supabase import create_client
-    
-    url = os.getenv('SUPABASE_URL')
-    key = os.getenv('SUPABASE_KEY')
-    
-    client = create_client(url, key)
-    
-    response = client.table('paulo_orcamentos').update(
+    from supabase_client import get_client
+
+    client = get_client()
+
+    response = client.table('orcamentos').update(
         {'status_orcamento': 'processando'}
     ).eq('numero_orcamento', 12052603).execute()
     

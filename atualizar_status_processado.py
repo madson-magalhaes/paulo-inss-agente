@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 try:
-    from supabase import create_client
+    from supabase_client import get_client
 except ImportError:
     print("❌ Erro: supabase não está instalado")
     sys.exit(1)
@@ -84,21 +84,20 @@ def extrair_dados_inss(arquivo_path):
     return dados
 
 
-def inserir_dados_paulo_inss(numero_orcamento):
-    """Insere dados resumidos do INSS na tabela paulo_inss"""
+def inserir_dados_inss(numero_orcamento):
+    """Insere dados resumidos do INSS na tabela inss"""
     try:
         import glob
-        url = os.getenv('SUPABASE_URL')
-        key = os.getenv('SUPABASE_KEY')
-        if not url or not key:
-            print("⚠️ Supabase não configurado, pulando paulo_inss")
+        try:
+            client = get_client()
+        except ValueError:
+            print("⚠️ Supabase não configurado, pulando inss")
             return False
 
-        client = create_client(url, key)
-        print(f"\n📊 Inserindo dados em paulo_inss...")
+        print(f"\n📊 Inserindo dados em inss...")
 
         session_id = None
-        orc_response = client.table('paulo_orcamentos').select('session_id').eq('numero_orcamento', numero_orcamento).limit(1).execute()
+        orc_response = client.table('orcamentos').select('session_id').eq('numero_orcamento', numero_orcamento).limit(1).execute()
         if orc_response.data:
             session_id = orc_response.data[0].get('session_id')
 
@@ -202,7 +201,7 @@ def inserir_dados_paulo_inss(numero_orcamento):
         }
 
         print(f"   Nome: {nome_cliente}")
-        print(f"   session_id: {session_id or '(não encontrado em paulo_orcamentos)'}")
+        print(f"   session_id: {session_id or '(não encontrado em orcamentos)'}")
         print(f"   INSS sem redução: R$ {inss_sem_reducao:.2f}")
         print(f"   INSS final: R$ {melhor_dados['inss_cenario_3']:.2f}")
         print(f"   Honorários: R$ {honorarios_valor:.2f}")
@@ -210,38 +209,37 @@ def inserir_dados_paulo_inss(numero_orcamento):
         print(f"   Economia: {percentual_economia:.2f}%")
         print(f"   % com Honorários: {percentual_com_honorarios:.2f}%")
 
-        response = client.table('paulo_inss').insert(dados_inss).execute()
+        response = client.table('inss').insert(dados_inss).execute()
 
         if response.data:
-            print(f"\n✓ Dados inseridos em paulo_inss")
+            print(f"\n✓ Dados inseridos em inss")
             return True
         else:
             print(f"⚠️ Nenhuma linha inserida")
             return False
 
     except Exception as e:
-        print(f"❌ Erro ao inserir em paulo_inss: {e}")
+        print(f"❌ Erro ao inserir em inss: {e}")
         return False
 
 def marcar_como_processado(numero_orcamento):
     try:
-        url = os.getenv('SUPABASE_URL')
-        key = os.getenv('SUPABASE_KEY')
-        if not url or not key:
+        try:
+            client = get_client()
+        except ValueError:
             print("⚠️ Supabase não configurado")
             return False
 
-        client = create_client(url, key)
         print(f"\n📝 Marcando orçamento como processado...")
 
-        response = client.table('paulo_orcamentos').select('id').eq('numero_orcamento', numero_orcamento).eq('status_orcamento', 'processando').execute()
+        response = client.table('orcamentos').select('id').eq('numero_orcamento', numero_orcamento).eq('status_orcamento', 'processando').execute()
         qtd = len(response.data) if response.data else 0
 
         if qtd == 0:
             print(f"⚠️ Nenhum registro processando encontrado")
             return False
 
-        client.table('paulo_orcamentos').update({'status_orcamento': 'processado'}).eq('numero_orcamento', numero_orcamento).eq('status_orcamento', 'processando').execute()
+        client.table('orcamentos').update({'status_orcamento': 'processado'}).eq('numero_orcamento', numero_orcamento).eq('status_orcamento', 'processando').execute()
         print(f"✓ {qtd} registro(s) marcado(s)")
         return True
 
@@ -305,7 +303,7 @@ def validar_arquivos_inss(numero_orcamento):
 
 def main():
     print("\n" + "=" * 80)
-    print("FINALIZAR CICLO: PAULO_INSS + STATUS PROCESSADO + GOOGLE DRIVE")
+    print("FINALIZAR CICLO: INSS + STATUS PROCESSADO + GOOGLE DRIVE")
     print("=" * 80)
 
     if len(sys.argv) < 2:
@@ -324,13 +322,13 @@ def main():
         print("❌ Arquivos INSS não encontrados - ABORTANDO")
         return 1
 
-    # ETAPA 2: Inserir em paulo_inss
+    # ETAPA 2: Inserir em inss
     print("\n" + "=" * 80)
-    print("ETAPA 2: INSERIR DADOS EM PAULO_INSS")
+    print("ETAPA 2: INSERIR DADOS EM INSS")
     print("=" * 80)
-    paulo_inss_ok = inserir_dados_paulo_inss(numero_orcamento)
-    if not paulo_inss_ok:
-        print("❌ Erro ao inserir em paulo_inss - ABORTANDO")
+    inss_ok = inserir_dados_inss(numero_orcamento)
+    if not inss_ok:
+        print("❌ Erro ao inserir em inss - ABORTANDO")
         return 1
 
     # ETAPA 3: Marcar como processado
@@ -348,7 +346,7 @@ def main():
     print("=" * 80)
     print("📋 Pré-requisitos atendidos:")
     print("   ✅ Arquivos INSS validados")
-    print("   ✅ Dados inseridos em paulo_inss")
+    print("   ✅ Dados inseridos em inss")
     print("   ✅ Status marcado como 'processado'")
     print("\n🚀 Iniciando sincronização com Google Drive...")
 
@@ -364,7 +362,7 @@ def main():
     print("=" * 80)
     print("\n📊 Resumo final:")
     print("   ✅ Arquivos INSS processados")
-    print("   ✅ Dados salvos em paulo_inss")
+    print("   ✅ Dados salvos em inss")
     print("   ✅ Status atualizado para 'processado'")
     print("   ✅ Sincronizado com Google Drive")
     print("\n" + "=" * 80 + "\n")

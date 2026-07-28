@@ -1,0 +1,174 @@
+-- ============================================================================
+-- ATUALIZAR FUNÇÃO EM PRODUÇÃO — salvar_orcamento_v2 (tabela: paulo_orcamentos)
+-- Rodar este arquivo INTEIRO no SQL Editor do Supabase.
+-- Novidade desta versão: validação de coberta em linha não-principal
+-- (erro 'DADOS INCOMPLETOS' → agente pergunta ao lead e rechama a tool).
+--
+-- ⚠️ NÃO rode o supabase_v2_setup.sql em produção: ele aponta para a tabela
+--    paulo_orcamentos_v2, que não existe mais após a migração.
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION salvar_orcamento_v2(p JSONB)
+RETURNS TEXT AS $$
+DECLARE
+  v_num   TEXT;
+  v_seq   INT;
+  v_dia   DATE := (now() AT TIME ZONE 'America/Fortaleza')::date;  -- data local, não UTC
+  v_area  JSONB;
+  v_par   JSONB;
+  v_meses TEXT := NULL;
+  v_chunk TEXT;
+  v_ini   DATE;
+  v_fim   DATE;
+BEGIN
+  -- 0. VALIDAÇÃO: toda linha não-principal precisa de coberta sim/nao
+  --    (o cálculo usa: coberta=50%, descoberta=25% — vale até para demolição).
+  --    Falhar AQUI permite ao agente perguntar ao lead e rechamar; se passasse,
+  --    o pipeline Python travaria em loop de erro no 'processando'.
+  IF EXISTS (
+    SELECT 1 FROM jsonb_array_elements(p->'areas') a
+    WHERE a->>'is_principal' = 'nao'
+      AND coalesce(a->>'coberta', '') NOT IN ('sim', 'nao')
+  ) THEN
+    RAISE EXCEPTION 'DADOS INCOMPLETOS: toda area com is_principal=nao (piscina, garagem, demolicao etc) exige coberta=sim ou nao. Pergunte ao lead se a area/estrutura e coberta e chame a tool novamente com o payload completo corrigido.';
+  END IF;
+
+  -- 1. Expansão de meses paralisados (antes da dedup, que compara meses):
+  --      {"inicio","fim"}      → fim = ÚLTIMO mês parado (INCLUSIVO)
+  --      {"inicio","retomada"} → retomada = mês em que voltou (EXCLUSIVO)
+  FOR v_par IN
+    SELECT * FROM jsonb_array_elements(coalesce(p->'paralisacoes', '[]'::jsonb))
+  LOOP
+    v_ini := to_date(v_par->>'inicio', 'MM/YYYY');
+
+    IF v_par ? 'retomada' AND coalesce(v_par->>'retomada', '') <> '' THEN
+      v_fim := to_date(v_par->>'retomada', 'MM/YYYY') - interval '1 month';
+    ELSIF coalesce(v_par->>'fim', '') <> '' THEN
+      v_fim := to_date(v_par->>'fim', 'MM/YYYY');
+    ELSE
+      CONTINUE;  -- intervalo sem fim/retomada: ignora
+    END IF;
+
+    SELECT string_agg(to_char(d, 'MM/YYYY'), ',' ORDER BY d)
+      INTO v_chunk
+    FROM generate_series(v_ini, v_fim, interval '1 month') d;
+
+    IF v_chunk IS NOT NULL THEN
+      v_meses := CASE WHEN v_meses IS NULL THEN v_chunk
+                      ELSE v_meses || ',' || v_chunk END;
+    END IF;
+  END LOOP;
+
+  -- 2. DEDUP: mesma conversa? (mesmo telefone + MESMO NOME, últimos 10 min)
+  --    Nome diferente = engenheiro simulando outro cliente → número novo
+  SELECT numero_orcamento INTO v_num
+  FROM paulo_orcamentos
+  WHERE telefone = p->>'telefone'
+    AND lower(trim(nome)) = lower(trim(p->>'nome'))
+    AND created_at > now() - interval '10 minutes'
+  ORDER BY created_at DESC
+  LIMIT 1;
+
+  IF v_num IS NOT NULL THEN
+    -- 2a. Linha já finalizada ('processado' ou além)? Não pode voltar ao ciclo
+    --     nem receber append → orçamento NOVO com o payload completo
+    IF EXISTS (
+      SELECT 1 FROM paulo_orcamentos
+      WHERE numero_orcamento = v_num
+        AND status_orcamento NOT IN ('aberto', 'processando')
+    ) THEN
+      v_num := NULL;
+
+    -- 2b. Linha 'processando' que o payload NÃO contém identicamente (correção
+    --     de valor ou dados gerais mudaram)? Não dá pra corrigir linha no ciclo
+    --     → orçamento NOVO completo. (Acréscimo puro passa: payload ⊇ linhas.)
+    ELSIF EXISTS (
+      SELECT 1 FROM paulo_orcamentos t
+      WHERE t.numero_orcamento = v_num
+        AND t.status_orcamento = 'processando'
+        AND NOT (
+          t.estado = p->>'estado'
+          AND t.data_inicio = p->>'data_inicio'
+          AND t.data_fim = p->>'data_fim'
+          AND t.concreto_usinado = coalesce(p->>'concreto_usinado', 'nao')
+          AND t.paralisacao = coalesce(p->>'paralisacao', 'nao')
+          AND t.meses_paralisados = coalesce(v_meses, '')
+          AND EXISTS (
+            SELECT 1 FROM jsonb_array_elements(p->'areas') a
+            WHERE a->>'tipo' = t.tipo
+              AND a->>'categoria' = t.categoria
+              AND a->>'material' = t.material
+              AND (a->>'area_m2')::numeric = t.area_m2::numeric
+              AND a->>'is_principal' = t.is_principal
+              AND coalesce(a->>'coberta', '') = coalesce(t.coberta, '')
+              AND coalesce(a->>'prefabricado', 'nao') = coalesce(t.prefabricado, 'nao')
+          )
+        )
+    ) THEN
+      v_num := NULL;
+    END IF;
+  END IF;
+
+  IF v_num IS NOT NULL THEN
+    -- Mesma conversa, nada finalizado: linhas ainda 'aberto' são regravadas
+    -- pelo payload (fonte da verdade); linhas 'processando' ficam INTACTAS
+    DELETE FROM paulo_orcamentos
+    WHERE numero_orcamento = v_num
+      AND status_orcamento = 'aberto';
+  ELSE
+    -- 3. Conversa/orçamento novo: número atômico AAMMDD + seq de 2 dígitos
+    INSERT INTO orcamento_seq (dia, seq)
+    VALUES (v_dia, 1)
+    ON CONFLICT (dia) DO UPDATE SET seq = orcamento_seq.seq + 1
+    RETURNING seq INTO v_seq;
+
+    v_num := to_char(v_dia, 'YYMMDD') || lpad(v_seq::text, 2, '0');
+  END IF;
+
+  -- 4. Inserir uma linha por área — todas com o mesmo número.
+  --    tipo/categoria/material/prefabricado são POR LINHA (reforma + demolição).
+  --    Área que já existe como linha 'processando' deste número é PULADA
+  --    (segue no ciclo; nunca duplica).
+  FOR v_area IN SELECT * FROM jsonb_array_elements(p->'areas')
+  LOOP
+    IF EXISTS (
+      SELECT 1 FROM paulo_orcamentos t
+      WHERE t.numero_orcamento = v_num
+        AND t.status_orcamento = 'processando'
+        AND t.tipo = v_area->>'tipo'
+        AND t.categoria = v_area->>'categoria'
+        AND t.material = v_area->>'material'
+        AND t.area_m2::numeric = (v_area->>'area_m2')::numeric
+        AND t.is_principal = v_area->>'is_principal'
+        AND coalesce(t.coberta, '') = coalesce(v_area->>'coberta', '')
+        AND coalesce(t.prefabricado, 'nao') = coalesce(v_area->>'prefabricado', 'nao')
+    ) THEN
+      CONTINUE;
+    END IF;
+
+    INSERT INTO paulo_orcamentos
+      (numero_orcamento, nome, telefone, estado, tipo, categoria, material,
+       area_m2, is_principal, coberta, data_inicio, data_fim,
+       concreto_usinado, paralisacao, prefabricado, meses_paralisados)
+    VALUES
+      (v_num,
+       p->>'nome',
+       p->>'telefone',
+       p->>'estado',
+       v_area->>'tipo',
+       v_area->>'categoria',
+       v_area->>'material',
+       v_area->>'area_m2',
+       v_area->>'is_principal',
+       coalesce(v_area->>'coberta', ''),
+       p->>'data_inicio',
+       p->>'data_fim',
+       coalesce(p->>'concreto_usinado', 'nao'),
+       coalesce(p->>'paralisacao', 'nao'),
+       coalesce(v_area->>'prefabricado', 'nao'),
+       coalesce(v_meses, ''));
+  END LOOP;
+
+  RETURN v_num;
+END;
+$$ LANGUAGE plpgsql;

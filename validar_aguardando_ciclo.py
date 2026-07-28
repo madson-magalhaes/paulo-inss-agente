@@ -38,7 +38,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 try:
-    from supabase import create_client
+    from supabase_client import get_client
     import pandas as pd
 except ImportError as e:
     print(f"❌ Erro: {e}")
@@ -83,15 +83,8 @@ def main():
     print("=" * 80 + "\n")
 
     # Conecta
-    url = os.getenv('SUPABASE_URL')
-    key = os.getenv('SUPABASE_KEY')
-
-    if not url or not key:
-        print("❌ SUPABASE_URL ou SUPABASE_KEY não configurados")
-        return {}
-
     try:
-        client = create_client(url, key)
+        client = get_client()
     except Exception as e:
         print(f"❌ Erro ao conectar: {e}")
         return {}
@@ -102,7 +95,7 @@ def main():
 
     # PASSO 1: Coleta em 'processando'
     print("📥 Coletando orçamentos em 'processando'...")
-    response = client.table('paulo_orcamentos').select(
+    response = client.table('orcamentos').select(
         'numero_orcamento'
     ).eq('status_orcamento', 'processando').execute()
 
@@ -117,7 +110,7 @@ def main():
 
     # PASSO 2: Coleta em 'aberto'
     print("📥 Coletando orçamentos em 'aberto'...")
-    response = client.table('paulo_orcamentos').select(
+    response = client.table('orcamentos').select(
         'numero_orcamento'
     ).eq('status_orcamento', 'aberto').execute()
 

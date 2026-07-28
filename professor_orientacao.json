@@ -1,0 +1,150 @@
+{
+  "projeto": "Distribuição ótima de recibos — aba 'Remunerações'",
+  "arquivo": "01. Calculadora (junho)_rev22.xlsm",
+  "objetivo": "Distribuir valores na coluna H (linhas 10–88) de modo que a soma corrigida pela SELIC alcance ou ultrapasse ligeiramente F6 (RMT Futuro), minimizando multa, nº de autônomos e oscilações.",
+  "parametros_globais": {
+    "sheet": "Remunerações",
+    "linha_inicial": 10,
+    "linha_final": 88,
+    "celula_alvo_RMT_futuro": "F6",
+    "passo_arredondamento": 5,
+    "recibo_minimo": 300,
+    "max_autonomos_desejado": 3,
+    "tolerancia_excesso_sobre_F6": "até 0,5%"
+  },
+  "restricoes_basicas": {
+    "recibo_multiplo_de_5": "Todos os recibos devem ser múltiplos de R$ 5,00",
+    "recibo_minimo": "Nunca lançar recibo menor que R$ 300,00 em um mês",
+    "distribuicao_selic": "Cada valor de recibo H, corrigido pela SELIC (coluna B), deve gerar soma ≥ F6",
+    "coerencia_autonomos": "N (nº autônomos) deve ser não-decrescente no tempo ou estável",
+    "limite_por_autonomo": "Respeitar teto_mes_i para cada período (1903 / 2112 / 2259 / 5000)"
+  },
+  "tres_objetivos_conflitantes": {
+    "1_menor_multa": {
+      "logica": "Meses fora do prazo (F='Não') geram multa de 20% + juros SELIC",
+      "estrategia": "Meses fora do prazo devem receber os MENORES valores possíveis"
+    },
+    "2_menor_numero_autonomos": {
+      "logica": "Cada autônomo tem um limite de recibo por mês (teto_mes_i)",
+      "estrategia": "Usar o mínimo de autônomos necessário para cobrir o valor de H"
+    },
+    "3_priorizacao_prazo_respeitado": {
+      "logica": "Coluna F marca se mês está dentro (Sim/Mês atual) ou fora (Não) do prazo",
+      "estrategia": "Meses dentro do prazo recebem os MAIORES valores possíveis"
+    }
+  },
+  "coerencia_autonomos_em_detalhe": {
+    "problema": "Oscilações como nov/25(3) → dez/25(3) → jan/26(2) → abr/26(3) geram incoerência visual",
+    "preferencia": "Manter lógica crescente ou estável: nov/25(1) → jan/26(2) → abr/26(3) → fev/27(3)",
+    "restricao": "N_i ≥ N_{i-1} para todo i (não-decrescente)"
+  },
+  "tabela_tetos_por_autonomo": [
+    {
+      "periodo": "10/2021 - 04/2023",
+      "teto": 1903
+    },
+    {
+      "periodo": "05/2023 - 01/2024",
+      "teto": 2112
+    },
+    {
+      "periodo": "02/2024 - 12/2025",
+      "teto": 2259
+    },
+    {
+      "periodo": "01/2026 em diante",
+      "teto": 5000
+    }
+  ],
+  "modelo_otimizacao": {
+    "variaveis_de_decisao": {
+      "H_i": "valor do recibo no mês i (entrada na coluna H)",
+      "N_i": "número de autônomos no mês i"
+    },
+    "funcao_objetivo": "minimizar (α·Σmulta_i + β·Σautônomos_i + γ·variacao_autônomos)",
+    "restricoes": [
+      "Σ H_i·(1+C_i) ≥ F6",
+      "H_i ∈ {0} ∪ [300, N_i · teto_mes_i]",
+      "H_i múltiplo de 5",
+      "N_i não-decrescente ao longo do tempo",
+      "meses com F='Não' recebem H_i menor possível",
+      "meses com F='Sim'/'Mês atual' recebem H_i maior possível",
+      "Agrupar meses contíguos com mesmo H_i (evitar saltos desnecessários)"
+    ]
+  },
+  "estrategia_algoritmica_5_fases": {
+    "fase_1_leitura_preparacao": [
+      "Carrega E, C, F, G, H, L das linhas 10–88",
+      "Filtra meses com G='Lançar'",
+      "Determina teto_mes_i pela tabela R2:S5"
+    ],
+    "fase_2_definir_autonomos_por_bloco": [
+      "Divide horizonte em blocos contíguos",
+      "Em cada bloco, fixa N único",
+      "Meses fora do prazo: N=1 (apenas complemento)",
+      "Meses dentro do prazo: N tal que N·teto_mes_i cubra valor desejado",
+      "Respeita N não-decrescente no tempo"
+    ],
+    "fase_3_alocacao_reversa": [
+      "Calcula restante = F6",
+      "Percorre meses DENTRO do prazo do mais recente → mais antigo",
+      "Atribui H_i = N_i · teto_mes_i (máximo permitido)",
+      "Desconta H_i·(1+C_i) de restante",
+      "Se restante > 0, percorre meses FORA do prazo do mais recente → mais antigo",
+      "Atribui H_i = max(300, restante/(1+C_i)), arredondado múltiplo de 5",
+      "Garante nenhum recibo fora do prazo > MIN_RECIBO"
+    ],
+    "fase_4_agrupamento_em_blocos": [
+      "Para cada faixa contígua com mesmo (prazo_lógico, N)",
+      "Calcula média dos H_i do bloco",
+      "Força todos os meses do bloco a usar mesmo H = média arredondada para múltiplo de 5",
+      "Acerto fino no último bloco para soma corrigida fechar ≥ F6"
+    ],
+    "fase_5_validacoes_finais": [
+      "Todo H > 0 deve ser ≥ 300 e múltiplo de 5",
+      "N_i não-decrescente",
+      "Σ H_i·(1+C_i) ≥ F6 com excesso ≤ 0,5%",
+      "Recalcula multa = H·(1+C)·20% e juros = H·(1+C)·C para fora do prazo"
+    ]
+  },
+  "ciclo_iterativo_importante": {
+    "nota": "Professor menciona 'rodar um loop 2-3x'",
+    "entendimento": [
+      "Fase 3 (alocação reversa) + Fase 4 (agrupamento) podem não convergir de primeira",
+      "Após agrupamento, a soma pode cair abaixo de F6",
+      "Solução: repetir ajuste final + reagrupamento até estabilizar"
+    ],
+    "implementacao_proposta": "while soma_anterior != soma_atual: { ajusta_para_alvo(); agrupa_blocos(); recalcula_soma(); }"
+  },
+  "saida_esperada": {
+    "formato": "DataFrame pandas + arquivo CSV",
+    "colunas": [
+      "linha (nº da linha na planilha)",
+      "mês (MM/YYYY)",
+      "prazo (Sim / Não / Mês atual)",
+      "recibo (H) — valor decidido",
+      "autônomos (N) — nº autônomos",
+      "teto/autônomo — teto_mes_i",
+      "selic — taxa acumulada C_i",
+      "corrigido — H · (1 + C)",
+      "multa 20% — 20% do corrigido se fora do prazo",
+      "juros selic — C · corrigido se fora do prazo",
+      "total c/ multa+juros — corrigido + multa + juros"
+    ],
+    "linha_total": "Soma de recibo, corrigido, multa, juros"
+  },
+  "verificacoes_importantes": {
+    "v1_coerencia_crescente": "print(list(df['autônomos (N)']))",
+    "v2_soma_selic": "sum(df['corrigido']) >= F6",
+    "v3_minimos": "all(df['recibo (H)'] % 5 == 0) and all(df['recibo (H)'] >= 300)",
+    "v4_multas": "df[df['prazo']=='Não']['multa 20%'].sum()",
+    "v5_visual": "Evitar recibos como 2230, 2250 (usar 2240 para ambos)"
+  },
+  "observacoes_finais": {
+    "ponto_1": "Script é SOMENTE LEITURA da planilha (não sobrescreve H)",
+    "ponto_2": "Preserva fórmulas em B (remuneração corrigida), L (autônomos), N (multa), O (juros)",
+    "ponto_3": "Saída em CSV com ponto-e-vírgula e vírgula decimal (pt-BR)",
+    "ponto_4": "Se quiser gravar de volta em H, próxima etapa = adaptar script para openpyxl.write",
+    "ponto_5": "Testes com exemplo real podem exigir ajustes nos pesos (α, β, γ) da função objetivo"
+  }
+}

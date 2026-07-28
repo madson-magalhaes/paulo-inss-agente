@@ -1,0 +1,3 @@
+nome,telefone,estado,tipo,categoria,material,area_m2,is_principal,coberta,data_inicio,data_fim,concreto_usinado,paralisacao,prefabricado
+Paulo Robson 2,558587243600,RS,comercial,obra_nova,alvenaria,34.5,nao,nao,01/04/2025,01/12/2026,nao,sim,nao
+Paulo Robson 2,558587243600,RS,comercial,obra_nova,alvenaria,564.3,sim,,01/04/2025,01/12/2026,nao,sim,nao
