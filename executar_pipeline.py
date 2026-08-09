@@ -89,29 +89,39 @@ def main():
 
     resultados = {}
     for numero in sorted(orcamentos_prontos.keys()):
-        print(f"\n{'─' * 80}")
-        print(f"Processando: {numero}")
-        print('─' * 80)
-
-        # Usar lista de argumentos para compatibilidade com todos os SOs
-        resultado = subprocess.run([sys.executable, "processar_orcamento.py", str(numero)])
-        sucesso = resultado.returncode == 0
-        resultados[numero] = sucesso
-
-        if sucesso:
-            print(f"✅ Processado: {numero}")
-
-            # ETAPA 4: Atualizar status para 'processado' + Google Drive sync
+        try:
             print(f"\n{'─' * 80}")
-            print(f"Finalizando: {numero}")
+            print(f"Processando: {numero}")
             print('─' * 80)
 
-            resultado_finalizacao = subprocess.run([sys.executable, "atualizar_status_processado.py", str(numero)])
+            # Usar lista de argumentos para compatibilidade com todos os SOs
+            resultado = subprocess.run([sys.executable, "processar_orcamento.py", str(numero)])
+            sucesso = resultado.returncode == 0
+            resultados[numero] = sucesso
 
-            if resultado_finalizacao.returncode != 0:
-                print(f"⚠️ Aviso: Erro ao finalizar {numero}, mas processamento completou")
-        else:
-            print(f"❌ Erro ao processar: {numero}")
+            if sucesso:
+                print(f"✅ Processado: {numero}")
+
+                # ETAPA 4: Atualizar status para 'processado' + Google Drive sync
+                print(f"\n{'─' * 80}")
+                print(f"Finalizando: {numero}")
+                print('─' * 80)
+
+                resultado_finalizacao = subprocess.run([sys.executable, "atualizar_status_processado.py", str(numero)])
+
+                if resultado_finalizacao.returncode != 0:
+                    print(f"⚠️ Aviso: Erro ao finalizar {numero}, mas processamento completou")
+            else:
+                print(f"❌ Erro ao processar: {numero}")
+                print(f"   Orçamento marcado como 'erro' no Supabase")
+                print(f"   Não será reprocessado nos próximos ciclos")
+
+        except Exception as e:
+            print(f"\n❌ EXCEÇÃO ao processar {numero}: {e}")
+            import traceback
+            traceback.print_exc()
+            resultados[numero] = False
+            print(f"   Loop continua com próximo orçamento...")
 
     # Resumo
     print("\n" + "╔" + "═" * 78 + "╗")

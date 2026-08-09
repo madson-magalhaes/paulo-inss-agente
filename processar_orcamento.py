@@ -157,6 +157,14 @@ def main():
 
     if resultado.returncode != 0:
         print(f"\n❌ Erro ao processar orçamento {numero_orcamento}")
+        print(f"   Marcando como 'erro' no Supabase...\n")
+
+        # Marca como erro no Supabase para não tentar reprocessar
+        subprocess.run(
+            [sys.executable, 'marcar_orcamento_erro.py', numero_orcamento, 'erro_processamento'],
+            cwd=os.path.dirname(os.path.abspath(__file__))
+        )
+
         return 1
 
     print("\n" + "=" * 80)

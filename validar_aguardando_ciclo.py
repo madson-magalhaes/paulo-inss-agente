@@ -93,10 +93,10 @@ def main():
     aguardando = carregar_aguardando()
     agora = datetime.now()
 
-    # PASSO 1: Coleta em 'processando'
+    # PASSO 1: Coleta em 'processando' (IGNORA 'erro')
     print("📥 Coletando orçamentos em 'processando'...")
     response = client.table('orcamentos').select(
-        'numero_orcamento'
+        'numero_orcamento, status_orcamento'
     ).eq('status_orcamento', 'processando').execute()
 
     if not response.data:
@@ -106,7 +106,25 @@ def main():
 
     df = pd.DataFrame(response.data)
     numeros_processando = set(df['numero_orcamento'].unique())
-    print(f"✓ {len(numeros_processando)} orçamento(s) em 'processando'\n")
+    print(f"✓ {len(numeros_processando)} orçamento(s) em 'processando'")
+
+    # PASSO 1.5: Coleta em 'erro' para IGNORAR (não tenta reprocessar)
+    print("📥 Coletando orçamentos em 'erro' para IGNORAR...")
+    response_erro = client.table('orcamentos').select(
+        'numero_orcamento'
+    ).eq('status_orcamento', 'erro').execute()
+
+    numeros_erro = set()
+    if response_erro.data:
+        df_erro = pd.DataFrame(response_erro.data)
+        numeros_erro = set(df_erro['numero_orcamento'].unique())
+
+    # Remove orçamentos em 'erro' do processamento
+    numeros_processando = numeros_processando - numeros_erro
+
+    if numeros_erro:
+        print(f"⚠️  {len(numeros_erro)} orçamento(s) em 'erro' (ignorados)")
+    print()
 
     # PASSO 2: Coleta em 'aberto'
     print("📥 Coletando orçamentos em 'aberto'...")

@@ -173,9 +173,19 @@ def carregar_obra_de_csv(caminho_csv: str) -> Tuple[ResultadoSimulacao, set, str
         reader = csv.DictReader(f)
         for row in reader:
             if not estado:
-                estado = row['estado'].strip().upper()
+                estado_raw = row.get('estado', '').strip().upper()
+                if not estado_raw:
+                    raise ValueError("❌ Coluna 'estado' está vazia ou ausente no CSV. Verifique se o arquivo está completo.")
+                estado = estado_raw
                 data_inicio = parse_data_ddmmyyyy(row['data_inicio'].strip())
                 data_fim = parse_data_ddmmyyyy(row['data_fim'].strip())
+
+                if data_inicio.year < 2018:
+                    raise ValueError(
+                        f"❌ Data de início ({data_inicio.strftime('%d/%m/%Y')}) está antes de 2018. "
+                        f"Arquivo ICM.csv contém dados apenas de 2018 a 2026. "
+                        f"Verifique se a data está correta."
+                    )
 
                 concreto_str = row.get('concreto_usinado', 'nao').strip()
                 concreto_usinado = parse_boolean(concreto_str)
