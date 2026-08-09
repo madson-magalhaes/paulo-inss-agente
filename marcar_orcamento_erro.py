@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """
 Marca orçamento como "erro" no Supabase
-
-Usa supabase_client.py que já funciona com o schema configurado
 """
 
 import sys
@@ -29,10 +27,8 @@ def marcar_como_erro(numero_orcamento, motivo="erro_processamento"):
         client = get_client()
         schema = get_schema_name()
 
-        print(f"   Conectando ao schema: {schema}")
-        
-        # Atualiza status para 'erro' usando .table() que já está configurado
-        # para o schema correto (via supabase_client.py)
+        # Usa client.table() diretamente - funciona com qualquer schema
+        # desde que esteja em "Exposed schemas" do Supabase
         response = client.table('orcamentos').update({
             'status_orcamento': 'erro'
         }).eq('numero_orcamento', str(numero_orcamento)).execute()

@@ -7,10 +7,13 @@ lugar, para que os scripts não precisem duplicar essa lógica.
 Schema controlado pela env var SUPABASE_SCHEMA (default: "public").
 Para testar o schema por-cliente (ex: paulo_robson), defina no .env:
     SUPABASE_SCHEMA=paulo_robson
-Sem essa variável, o comportamento é idêntico ao de produção (schema public).
 
 IMPORTANTE: o schema precisa estar na lista "Exposed schemas" em
 Settings > API do painel do Supabase, senão a API REST retorna erro.
+
+NOTA: NÃO usamos client.schema() porque causa erro em operações UPDATE/DELETE.
+Em vez disso, retornamos o client direto e confiamos que o schema já está
+em "Exposed schemas" para o usuário autenticado.
 """
 import os
 from pathlib import Path
@@ -27,15 +30,18 @@ def _load_env():
 
 def get_client(url: str = None, key: str = None):
     """
-    Cria e retorna um client Supabase já apontando para o schema configurado
-    (SUPABASE_SCHEMA no .env, default "public").
-
+    Cria e retorna um client Supabase.
+    
     Uso: client = get_client()
          client.table('orcamentos').select('*').execute()
+         client.table('orcamentos').update({...}).execute()
 
-    Nota: quando SUPABASE_SCHEMA != "public", o retorno é o resultado de
-    client.schema(nome) (um SyncPostgrestClient), que expõe os mesmos
-    métodos .table()/.rpc() usados nos scripts — a troca é transparente.
+    Returns:
+        Client Supabase simples que funciona com qualquer schema
+        que esteja em "Exposed schemas" na config do Supabase.
+        
+    O schema é apenas informativo (para leitura em get_schema_name()).
+    O Supabase REST API usa o schema do usuário autenticado por padrão.
     """
     from supabase import create_client
 
@@ -47,13 +53,8 @@ def get_client(url: str = None, key: str = None):
     if not url or not key:
         raise ValueError("SUPABASE_URL ou SUPABASE_KEY não configurados")
 
-    client = create_client(url, key)
-
-    schema = os.getenv('SUPABASE_SCHEMA', 'public')
-    if schema != 'public':
-        return client.schema(schema)
-
-    return client
+    # Retornar client simples - Supabase usa o schema padrão da chave
+    return create_client(url, key)
 
 
 def get_schema_name() -> str:
