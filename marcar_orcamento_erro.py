@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 def marcar_como_erro(numero_orcamento, motivo="erro_processamento"):
     """
-    Marca orçamento como 'erro' no Supabase
+    Marca orçamento como 'erro' no Supabase via REST API direto
 
     Args:
         numero_orcamento: Número do orçamento (ex: 26080701)
@@ -31,26 +31,50 @@ def marcar_como_erro(numero_orcamento, motivo="erro_processamento"):
         True se marcado com sucesso, False caso contrário
     """
     try:
-        from supabase_client import get_client
+        from dotenv import load_dotenv
+        from pathlib import Path
+        
+        # Carregar .env
+        env_path = Path(__file__).parent / '.env'
+        if env_path.exists():
+            load_dotenv(str(env_path))
+        else:
+            load_dotenv()
+        
+        from supabase import create_client
+        
+        url = os.getenv('SUPABASE_URL')
+        key = os.getenv('SUPABASE_KEY')
+        schema = os.getenv('SUPABASE_SCHEMA', 'public')
 
-        client = get_client()
+        if not url or not key:
+            raise ValueError("SUPABASE_URL ou SUPABASE_KEY não configurados")
 
-        # Atualiza status para 'erro'
-        response = client.table('paulo_orcamentos').update({
-            'status_orcamento': 'erro'
-        }).eq('numero_orcamento', numero_orcamento).execute()
+        # Criar client
+        client = create_client(url, key)
+        
+        # Executar UPDATE direto (Supabase REST API)
+        # Funciona com qualquer schema se estiver em "Exposed schemas"
+        response = client.table('paulo_orcamentos') \
+            .update({'status_orcamento': 'erro'}) \
+            .eq('numero_orcamento', str(numero_orcamento)) \
+            .execute()
 
-        if response.data:
+        if response.data and len(response.data) > 0:
             print(f"\n✅ Orçamento {numero_orcamento} marcado como 'erro'")
+            print(f"   Schema: {schema}")
             print(f"   Motivo: {motivo}")
+            print(f"   Linhas atualizadas: {len(response.data)}")
             return True
         else:
-            print(f"\n⚠️  Nenhum registro atualizado para {numero_orcamento}")
+            print(f"\n⚠️  Aviso: Nenhum registro atualizado para {numero_orcamento}")
+            print(f"   Verificar se número existe em {schema}.paulo_orcamentos")
+            print(f"   (Loop continua mesmo assim)")
             return False
 
     except Exception as e:
         print(f"\n⚠️  Aviso: Não foi possível marcar erro em Supabase")
-        print(f"   Erro: {e}")
+        print(f"   Erro: {type(e).__name__}: {e}")
         print(f"   (Loop continua mesmo assim)")
         return False
 

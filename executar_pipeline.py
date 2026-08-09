@@ -91,7 +91,7 @@ def main():
     for numero in sorted(orcamentos_prontos.keys()):
         try:
             print(f"\n{'─' * 80}")
-            print(f"Processando: {numero}")
+            print(f"📄 Processando: {numero}")
             print('─' * 80)
 
             # Usar lista de argumentos para compatibilidade com todos os SOs
@@ -113,14 +113,31 @@ def main():
                     print(f"⚠️ Aviso: Erro ao finalizar {numero}, mas processamento completou")
             else:
                 print(f"❌ Erro ao processar: {numero}")
-                print(f"   Orçamento marcado como 'erro' no Supabase")
-                print(f"   Não será reprocessado nos próximos ciclos")
+                print(f"   Marcando como 'erro' no Supabase...\n")
+                
+                # Chamar marcar_orcamento_erro.py para marcar como erro
+                resultado_erro = subprocess.run([sys.executable, "marcar_orcamento_erro.py", str(numero), "erro_processamento"])
+                
+                if resultado_erro.returncode == 0:
+                    print(f"   ✅ Marcado como 'erro' com sucesso")
+                else:
+                    print(f"   ⚠️ Erro ao marcar erro (mas loop continua)")
 
         except Exception as e:
             print(f"\n❌ EXCEÇÃO ao processar {numero}: {e}")
             import traceback
             traceback.print_exc()
             resultados[numero] = False
+            
+            print(f"   Marcando como 'erro' no Supabase...\n")
+            # Chamar marcar_orcamento_erro.py mesmo em exceção
+            resultado_erro = subprocess.run([sys.executable, "marcar_orcamento_erro.py", str(numero), "erro_processamento"])
+            
+            if resultado_erro.returncode == 0:
+                print(f"   ✅ Marcado como 'erro' com sucesso")
+            else:
+                print(f"   ⚠️ Erro ao marcar erro (mas loop continua)")
+            
             print(f"   Loop continua com próximo orçamento...")
 
     # Resumo
