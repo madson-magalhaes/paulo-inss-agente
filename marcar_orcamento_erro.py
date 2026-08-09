@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 def marcar_como_erro(numero_orcamento, motivo="erro_processamento"):
     """
-    Marca orçamento como 'erro' no Supabase via HTTP REST direto
+    Marca orçamento como 'erro' em paulo_robson.orcamentos via HTTP REST direto
 
     Args:
         numero_orcamento: Número do orçamento (ex: 26080701)
@@ -38,13 +38,13 @@ def marcar_como_erro(numero_orcamento, motivo="erro_processamento"):
         
         url = os.getenv('SUPABASE_URL')
         key = os.getenv('SUPABASE_KEY')
-        schema = os.getenv('SUPABASE_SCHEMA', 'public')
 
         if not url or not key:
             raise ValueError("SUPABASE_URL ou SUPABASE_KEY não configurados")
 
-        # Construir URL REST API do Supabase com query string
-        rest_url = f"{url}/rest/v1/paulo_orcamentos?numero_orcamento=eq.{numero_orcamento}"
+        # Supabase REST API para paulo_robson.orcamentos
+        # Format: /rest/v1/orcamentos com Prefer header indicando schema
+        rest_url = f"{url}/rest/v1/orcamentos?numero_orcamento=eq.{numero_orcamento}"
         
         # Payload para UPDATE (PATCH)
         data = json.dumps({'status_orcamento': 'erro'}).encode('utf-8')
@@ -54,7 +54,7 @@ def marcar_como_erro(numero_orcamento, motivo="erro_processamento"):
             'apikey': key,
             'Authorization': f'Bearer {key}',
             'Content-Type': 'application/json',
-            'Prefer': f'schema={schema},return=representation'  # Retornar registros atualizados
+            'Prefer': 'schema=paulo_robson,return=representation'  # Usar schema paulo_robson + retornar dados
         }
         
         # Criar request
@@ -74,13 +74,14 @@ def marcar_como_erro(numero_orcamento, motivo="erro_processamento"):
                 # Verificar se algum registro foi atualizado
                 if isinstance(result, list) and len(result) > 0:
                     print(f"\n✅ Orçamento {numero_orcamento} marcado como 'erro'")
-                    print(f"   Schema: {schema}")
+                    print(f"   Schema: paulo_robson")
+                    print(f"   Tabela: orcamentos")
                     print(f"   Motivo: {motivo}")
                     print(f"   Linhas atualizadas: {len(result)}")
                     return True
                 else:
                     print(f"\n⚠️  Aviso: Nenhum registro atualizado para {numero_orcamento}")
-                    print(f"   Verificar se número existe em {schema}.paulo_orcamentos")
+                    print(f"   Verificar se número existe em paulo_robson.orcamentos")
                     print(f"   (Loop continua mesmo assim)")
                     return False
         
