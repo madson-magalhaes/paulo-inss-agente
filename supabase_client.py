@@ -1,19 +1,7 @@
 """
-Módulo central de conexão com o Supabase.
-
-Concentra a criação do client e a seleção de schema (multi-tenant) num único
-lugar, para que os scripts não precisem duplicar essa lógica.
+Módulo central de conexão com o Supabase com suporte a multi-tenant.
 
 Schema controlado pela env var SUPABASE_SCHEMA (default: "public").
-Para testar o schema por-cliente (ex: paulo_robson), defina no .env:
-    SUPABASE_SCHEMA=paulo_robson
-
-IMPORTANTE: o schema precisa estar na lista "Exposed schemas" em
-Settings > API do painel do Supabase, senão a API REST retorna erro.
-
-NOTA: NÃO usamos client.schema() porque causa erro em operações UPDATE/DELETE.
-Em vez disso, retornamos o client direto e confiamos que o schema já está
-em "Exposed schemas" para o usuário autenticado.
 """
 import os
 from pathlib import Path
@@ -30,18 +18,7 @@ def _load_env():
 
 def get_client(url: str = None, key: str = None):
     """
-    Cria e retorna um client Supabase.
-    
-    Uso: client = get_client()
-         client.table('orcamentos').select('*').execute()
-         client.table('orcamentos').update({...}).execute()
-
-    Returns:
-        Client Supabase simples que funciona com qualquer schema
-        que esteja em "Exposed schemas" na config do Supabase.
-        
-    O schema é apenas informativo (para leitura em get_schema_name()).
-    O Supabase REST API usa o schema do usuário autenticado por padrão.
+    Cria e retorna um client Supabase configurado para o schema correto.
     """
     from supabase import create_client
 
@@ -49,15 +26,48 @@ def get_client(url: str = None, key: str = None):
 
     url = url or os.getenv('SUPABASE_URL')
     key = key or os.getenv('SUPABASE_KEY')
+    schema = os.getenv('SUPABASE_SCHEMA', 'public')
 
     if not url or not key:
         raise ValueError("SUPABASE_URL ou SUPABASE_KEY não configurados")
 
-    # Retornar client simples - Supabase usa o schema padrão da chave
-    return create_client(url, key)
+    # Criar client base
+    base_client = create_client(url, key)
+    
+    # Se schema é public, retornar direto
+    if schema == 'public':
+        return base_client
+    
+    # Se é outro schema, usar wrapper que adiciona headers via .headers()
+    return SupabaseSchemaClient(base_client, schema)
 
 
 def get_schema_name() -> str:
-    """Retorna o nome do schema configurado (SUPABASE_SCHEMA, default 'public')."""
+    """Retorna o nome do schema configurado"""
     _load_env()
     return os.getenv('SUPABASE_SCHEMA', 'public')
+
+
+class SupabaseSchemaClient:
+    """
+    Wrapper que intercepta table() e adiciona Prefer header para schema.
+    
+    Uso é idêntico ao client normal:
+        client.table('orcamentos').select('*').execute()
+        client.table('orcamentos').update({...}).execute()
+    """
+    
+    def __init__(self, base_client, schema_name):
+        self._client = base_client
+        self._schema = schema_name
+    
+    def table(self, table_name):
+        """Retorna query builder com schema predefinido via .headers()"""
+        qb = self._client.table(table_name)
+        # Usar método .headers() para adicionar Prefer header
+        # Este método retorna um novo query builder com os headers
+        return qb.headers({'Prefer': f'schema={self._schema}'})
+    
+    def __getattr__(self, name):
+        """Delegar métodos não definidos ao client base"""
+        return getattr(self._client, name)
