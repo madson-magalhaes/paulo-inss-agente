@@ -1,18 +1,27 @@
 #!/usr/bin/env python3
 """
 Marca orçamento como "erro" no Supabase
+
+Uso:
+  python3 marcar_orcamento_erro.py <numero_orcamento> [motivo]
+
+Motivo (opcional):
+  - estado_vazio
+  - data_invalida
+  - arquivo_nao_encontrado
+  - erro_processamento
+  - outro erro
 """
 
 import sys
 import os
-from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
 def marcar_como_erro(numero_orcamento, motivo="erro_processamento"):
     """
-    Marca orçamento como 'erro' em paulo_robson.orcamentos
+    Marca orçamento como 'erro' no Supabase
 
     Args:
         numero_orcamento: Número do orçamento (ex: 26080701)
@@ -22,33 +31,26 @@ def marcar_como_erro(numero_orcamento, motivo="erro_processamento"):
         True se marcado com sucesso, False caso contrário
     """
     try:
-        from supabase_client import get_client, get_schema_name
+        from supabase_client import get_client
 
         client = get_client()
-        schema = get_schema_name()
 
-        # Usa client.table() diretamente - funciona com qualquer schema
-        # desde que esteja em "Exposed schemas" do Supabase
+        # Atualiza status para 'erro'
         response = client.table('orcamentos').update({
             'status_orcamento': 'erro'
-        }).eq('numero_orcamento', str(numero_orcamento)).execute()
+        }).eq('numero_orcamento', numero_orcamento).execute()
 
-        if response.data and len(response.data) > 0:
+        if response.data:
             print(f"\n✅ Orçamento {numero_orcamento} marcado como 'erro'")
-            print(f"   Schema: {schema}")
-            print(f"   Tabela: orcamentos")
             print(f"   Motivo: {motivo}")
-            print(f"   Linhas atualizadas: {len(response.data)}")
             return True
         else:
-            print(f"\n⚠️  Aviso: Nenhum registro atualizado para {numero_orcamento}")
-            print(f"   Verificar se número existe em {schema}.orcamentos")
-            print(f"   (Loop continua mesmo assim)")
+            print(f"\n⚠️  Nenhum registro atualizado para {numero_orcamento}")
             return False
 
     except Exception as e:
         print(f"\n⚠️  Aviso: Não foi possível marcar erro em Supabase")
-        print(f"   Erro: {type(e).__name__}: {e}")
+        print(f"   Erro: {e}")
         print(f"   (Loop continua mesmo assim)")
         return False
 
