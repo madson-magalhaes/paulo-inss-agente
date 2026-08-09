@@ -1,8 +1,8 @@
 """
-Módulo central de conexão com o Supabase com suporte a multi-tenant.
+Módulo central de conexão com o Supabase.
 
-As tabelas estão em schema paulo_robson, não em public.
-Supabase REST API acessa automaticamente o schema padrão da chave.
+Tabelas estão em paulo_robson, não em public.
+Usa header Prefer: schema=paulo_robson em TODOS os requests.
 """
 import os
 from pathlib import Path
@@ -17,13 +17,28 @@ def _load_env():
         load_dotenv()
 
 
+class SchemaClient:
+    """Wrapper que adiciona Prefer header com schema em todo request"""
+    
+    def __init__(self, base_client, schema):
+        self.base = base_client
+        self.schema = schema
+    
+    def table(self, name):
+        qb = self.base.table(name)
+        # Adicionar Prefer header
+        return qb.headers({'Prefer': f'schema={self.schema}'})
+    
+    def rpc(self, name, params=None):
+        return self.base.rpc(name, params)
+    
+    def __getattr__(self, name):
+        return getattr(self.base, name)
+
+
 def get_client(url: str = None, key: str = None):
     """
-    Cria e retorna um client Supabase.
-    
-    IMPORTANTE: A chave API precisa ter permissão no schema paulo_robson.
-    Supabase REST API usa automaticamente o schema padrão da chave,
-    então não precisa fazer nada especial - só criar e retornar.
+    Cria client que usa paulo_robson automaticamente.
     """
     from supabase import create_client
 
@@ -31,15 +46,20 @@ def get_client(url: str = None, key: str = None):
 
     url = url or os.getenv('SUPABASE_URL')
     key = key or os.getenv('SUPABASE_KEY')
+    schema = os.getenv('SUPABASE_SCHEMA', 'public')
 
     if not url or not key:
         raise ValueError("SUPABASE_URL ou SUPABASE_KEY não configurados")
 
-    # Client simples - funciona porque a chave tem permissão em paulo_robson
-    return create_client(url, key)
+    base = create_client(url, key)
+    
+    # Se não é public, usar SchemaClient que adiciona header
+    if schema != 'public':
+        return SchemaClient(base, schema)
+    
+    return base
 
 
 def get_schema_name() -> str:
-    """Retorna o schema esperado (apenas para logs)"""
     _load_env()
     return os.getenv('SUPABASE_SCHEMA', 'public')
