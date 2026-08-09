@@ -1,8 +1,16 @@
 """
 Módulo central de conexão com o Supabase.
 
-Tabelas estão em paulo_robson, não em public.
-Usa header Prefer: schema=paulo_robson em TODOS os requests.
+Concentra a criação do client e a seleção de schema (multi-tenant) num único
+lugar, para que os scripts não precisem duplicar essa lógica.
+
+Schema controlado pela env var SUPABASE_SCHEMA (default: "public").
+Para testar o schema por-cliente (ex: paulo_robson), defina no .env:
+    SUPABASE_SCHEMA=paulo_robson
+Sem essa variável, o comportamento é idêntico ao de produção (schema public).
+
+IMPORTANTE: o schema precisa estar na lista "Exposed schemas" em
+Settings > API do painel do Supabase, senão a API REST retorna erro.
 """
 import os
 from pathlib import Path
@@ -17,28 +25,17 @@ def _load_env():
         load_dotenv()
 
 
-class SchemaClient:
-    """Wrapper que adiciona Prefer header com schema em todo request"""
-    
-    def __init__(self, base_client, schema):
-        self.base = base_client
-        self.schema = schema
-    
-    def table(self, name):
-        qb = self.base.table(name)
-        # Adicionar Prefer header
-        return qb.headers({'Prefer': f'schema={self.schema}'})
-    
-    def rpc(self, name, params=None):
-        return self.base.rpc(name, params)
-    
-    def __getattr__(self, name):
-        return getattr(self.base, name)
-
-
 def get_client(url: str = None, key: str = None):
     """
-    Cria client que usa paulo_robson automaticamente.
+    Cria e retorna um client Supabase já apontando para o schema configurado
+    (SUPABASE_SCHEMA no .env, default "public").
+
+    Uso: client = get_client()
+         client.table('orcamentos').select('*').execute()
+
+    Nota: quando SUPABASE_SCHEMA != "public", o retorno é o resultado de
+    client.schema(nome) (um SyncPostgrestClient), que expõe os mesmos
+    métodos .table()/.rpc() usados nos scripts — a troca é transparente.
     """
     from supabase import create_client
 
@@ -46,20 +43,20 @@ def get_client(url: str = None, key: str = None):
 
     url = url or os.getenv('SUPABASE_URL')
     key = key or os.getenv('SUPABASE_KEY')
-    schema = os.getenv('SUPABASE_SCHEMA', 'public')
 
     if not url or not key:
         raise ValueError("SUPABASE_URL ou SUPABASE_KEY não configurados")
 
-    base = create_client(url, key)
-    
-    # Se não é public, usar SchemaClient que adiciona header
+    client = create_client(url, key)
+
+    schema = os.getenv('SUPABASE_SCHEMA', 'public')
     if schema != 'public':
-        return SchemaClient(base, schema)
-    
-    return base
+        return client.schema(schema)
+
+    return client
 
 
 def get_schema_name() -> str:
+    """Retorna o nome do schema configurado (SUPABASE_SCHEMA, default 'public')."""
     _load_env()
     return os.getenv('SUPABASE_SCHEMA', 'public')
