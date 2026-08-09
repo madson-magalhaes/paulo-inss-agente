@@ -2,26 +2,22 @@
 """
 Marca orçamento como "erro" no Supabase
 
-Uso:
-  python3 marcar_orcamento_erro.py <numero_orcamento> [motivo]
-
-Motivo (opcional):
-  - estado_vazio
-  - data_invalida
-  - arquivo_nao_encontrado
-  - erro_processamento
-  - outro erro
+Usa HTTP direto via urllib (built-in) para funcionar com qualquer schema
 """
 
 import sys
 import os
+import json
+import urllib.request
+import urllib.error
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
 def marcar_como_erro(numero_orcamento, motivo="erro_processamento"):
     """
-    Marca orçamento como 'erro' no Supabase via REST API direto
+    Marca orçamento como 'erro' no Supabase via HTTP REST direto
 
     Args:
         numero_orcamento: Número do orçamento (ex: 26080701)
@@ -32,7 +28,6 @@ def marcar_como_erro(numero_orcamento, motivo="erro_processamento"):
     """
     try:
         from dotenv import load_dotenv
-        from pathlib import Path
         
         # Carregar .env
         env_path = Path(__file__).parent / '.env'
@@ -41,8 +36,6 @@ def marcar_como_erro(numero_orcamento, motivo="erro_processamento"):
         else:
             load_dotenv()
         
-        from supabase import create_client
-        
         url = os.getenv('SUPABASE_URL')
         key = os.getenv('SUPABASE_KEY')
         schema = os.getenv('SUPABASE_SCHEMA', 'public')
@@ -50,25 +43,54 @@ def marcar_como_erro(numero_orcamento, motivo="erro_processamento"):
         if not url or not key:
             raise ValueError("SUPABASE_URL ou SUPABASE_KEY não configurados")
 
-        # Criar client
-        client = create_client(url, key)
+        # Construir URL REST API do Supabase com query string
+        rest_url = f"{url}/rest/v1/paulo_orcamentos?numero_orcamento=eq.{numero_orcamento}"
         
-        # Executar UPDATE direto (Supabase REST API)
-        # Funciona com qualquer schema se estiver em "Exposed schemas"
-        response = client.table('paulo_orcamentos') \
-            .update({'status_orcamento': 'erro'}) \
-            .eq('numero_orcamento', str(numero_orcamento)) \
-            .execute()
-
-        if response.data and len(response.data) > 0:
-            print(f"\n✅ Orçamento {numero_orcamento} marcado como 'erro'")
-            print(f"   Schema: {schema}")
-            print(f"   Motivo: {motivo}")
-            print(f"   Linhas atualizadas: {len(response.data)}")
-            return True
-        else:
-            print(f"\n⚠️  Aviso: Nenhum registro atualizado para {numero_orcamento}")
-            print(f"   Verificar se número existe em {schema}.paulo_orcamentos")
+        # Payload para UPDATE (PATCH)
+        data = json.dumps({'status_orcamento': 'erro'}).encode('utf-8')
+        
+        # Headers
+        headers = {
+            'apikey': key,
+            'Authorization': f'Bearer {key}',
+            'Content-Type': 'application/json',
+            'Prefer': f'schema={schema},return=representation'  # Retornar registros atualizados
+        }
+        
+        # Criar request
+        req = urllib.request.Request(
+            rest_url,
+            data=data,
+            headers=headers,
+            method='PATCH'
+        )
+        
+        # Executar
+        try:
+            with urllib.request.urlopen(req) as response:
+                response_data = response.read().decode('utf-8')
+                result = json.loads(response_data) if response_data else []
+                
+                # Verificar se algum registro foi atualizado
+                if isinstance(result, list) and len(result) > 0:
+                    print(f"\n✅ Orçamento {numero_orcamento} marcado como 'erro'")
+                    print(f"   Schema: {schema}")
+                    print(f"   Motivo: {motivo}")
+                    print(f"   Linhas atualizadas: {len(result)}")
+                    return True
+                else:
+                    print(f"\n⚠️  Aviso: Nenhum registro atualizado para {numero_orcamento}")
+                    print(f"   Verificar se número existe em {schema}.paulo_orcamentos")
+                    print(f"   (Loop continua mesmo assim)")
+                    return False
+        
+        except urllib.error.HTTPError as http_err:
+            print(f"\n⚠️  Aviso: HTTP {http_err.code} ao atualizar Supabase")
+            try:
+                error_body = http_err.read().decode('utf-8')
+                print(f"   Resposta: {error_body[:200]}")
+            except:
+                pass
             print(f"   (Loop continua mesmo assim)")
             return False
 
