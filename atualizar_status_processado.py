@@ -195,7 +195,7 @@ def inserir_dados_inss(numero_orcamento):
             'inss_sem_reducao': inss_sem_reducao,
             'inss_otimizado': melhor_dados['inss_cenario_3'],
             'percentual_economia': percentual_economia,
-            'honorarios': melhor_dados['honorarios'] or 0.0,
+            'honorarios': honorarios_valor,
             'inss_com_honorarios': inss_com_honorarios,
             'percentual_com_honorarios': percentual_com_honorarios,
         }
